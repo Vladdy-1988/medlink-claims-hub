@@ -1,0 +1,237 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Session storage table for Replit Auth
+model Session {
+  sid    String   @id
+  sess   Json
+  expire DateTime
+
+  @@index([expire], name: "IDX_session_expire")
+  @@map("sessions")
+}
+
+// Organizations
+model Organization {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  address   String?
+  phone     String?
+  website   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  users        User[]
+  patients     Patient[]
+  providers    Provider[]
+  appointments Appointment[]
+  claims       Claim[]
+  auditEvents  AuditEvent[]
+
+  @@map("organizations")
+}
+
+// Users with role-based access
+model User {
+  id              String    @id @default(dbgenerated("gen_random_uuid()"))
+  email           String?   @unique
+  firstName       String?   @map("first_name")
+  lastName        String?   @map("last_name")
+  profileImageUrl String?   @map("profile_image_url")
+  role            String    @default("provider") // 'provider', 'billing', 'admin'
+  orgId           String?   @map("org_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  claims       Claim[]
+  auditEvents  AuditEvent[]
+
+  @@map("users")
+}
+
+// Patients
+model Patient {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  name        String
+  dob         DateTime?
+  identifiers Json? // insurance numbers, health card, etc.
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  claims       Claim[]
+
+  @@map("patients")
+}
+
+// Healthcare providers
+model Provider {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  name          String
+  discipline    String? // physiotherapy, massage therapy, etc.
+  licenceNumber String?  @map("licence_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  claims       Claim[]
+
+  @@map("providers")
+}
+
+// Appointments
+model Appointment {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId       String   @map("org_id") @db.Uuid
+  patientId   String   @map("patient_id") @db.Uuid
+  providerId  String   @map("provider_id") @db.Uuid
+  scheduledAt DateTime @map("scheduled_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  provider     Provider     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  claims       Claim[]
+
+  @@map("appointments")
+}
+
+// Insurance companies
+model Insurer {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  rail      InsuranceRail
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  claims      Claim[]
+  remittances Remittance[]
+
+  @@map("insurers")
+}
+
+// Claims and pre-authorizations
+model Claim {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId           String      @map("org_id") @db.Uuid
+  patientId       String      @map("patient_id") @db.Uuid
+  providerId      String      @map("provider_id") @db.Uuid
+  insurerId       String      @map("insurer_id") @db.Uuid
+  appointmentId   String?     @map("appointment_id") @db.Uuid
+  type            ClaimType
+  status          ClaimStatus @default(draft)
+  amount          Decimal     @db.Decimal(10, 2)
+  currency        String      @default("CAD")
+  codes           Json? // procedure codes array
+  notes           String?
+  referenceNumber String?     @map("reference_number")
+  createdBy       String      @map("created_by")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  provider     Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  insurer      Insurer       @relation(fields: [insurerId], references: [id], onDelete: Cascade)
+  appointment  Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  createdByUser User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  attachments  Attachment[]
+  remittances  Remittance[]
+
+  @@map("claims")
+}
+
+// File attachments for claims
+model Attachment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  claimId   String   @map("claim_id") @db.Uuid
+  url       String
+  mime      String
+  kind      String // 'photo', 'pdf', 'note'
+  checksum  String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+// Payment remittances from insurers
+model Remittance {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  insurerId  String   @map("insurer_id") @db.Uuid
+  claimId    String?  @map("claim_id") @db.Uuid
+  status     String
+  amountPaid Decimal? @map("amount_paid") @db.Decimal(10, 2)
+  raw        Json? // raw remittance data
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  insurer Insurer @relation(fields: [insurerId], references: [id], onDelete: Cascade)
+  claim   Claim?  @relation(fields: [claimId], references: [id], onDelete: SetNull)
+
+  @@map("remittances")
+}
+
+// Audit trail for all user actions
+model AuditEvent {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  actorUserId  String   @map("actor_user_id")
+  type         String
+  details      Json
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  actor        User         @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@map("audit_events")
+}
+
+// Enums
+enum ClaimStatus {
+  draft
+  submitted
+  pending
+  infoRequested
+  paid
+  denied
+
+  @@map("claim_status")
+}
+
+enum ClaimType {
+  claim
+  preauth
+
+  @@map("claim_type")
+}
+
+enum InsuranceRail {
+  telusEclaims
+  cdanet
+  portal
+
+  @@map("rail")
+}
