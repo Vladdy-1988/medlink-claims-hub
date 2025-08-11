@@ -36,8 +36,8 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/claims" component={Claims} />
           <Route path="/claims/new" component={NewClaim} />
-          <Route path="/claims/:id" component={ClaimDetail} />
           <Route path="/preauths/new" component={NewPreAuth} />
+          <Route path="/claims/:id" component={ClaimDetail} />
           <Route path="/remittances" component={Remittances} />
           <Route path="/settings" component={Settings} />
           <Route path="/admin" component={Admin} />
