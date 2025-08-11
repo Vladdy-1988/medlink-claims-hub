@@ -72,6 +72,10 @@ export interface IStorage {
   // Audit operations
   createAuditEvent(event: InsertAuditEvent): Promise<AuditEvent>;
   getAuditEvents(orgId: string, limit?: number): Promise<AuditEvent[]>;
+  createAuditLog(event: any): Promise<any>;
+  
+  // Scheduler operations
+  getClaimsByStatus(statuses: string[]): Promise<Claim[]>;
   
   // Dashboard KPIs
   getDashboardStats(orgId: string): Promise<{
@@ -214,6 +218,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(auditEvents.orgId, orgId))
       .orderBy(desc(auditEvents.createdAt))
       .limit(limit);
+  }
+
+  async createAuditLog(event: any): Promise<any> {
+    // Redirect to existing audit event creation for compatibility
+    return this.createAuditEvent(event);
+  }
+
+  async getClaimsByStatus(statuses: string[]): Promise<Claim[]> {
+    return await db
+      .select()
+      .from(claims)
+      .where(sql`${claims.status} = ANY(${statuses})`)
+      .orderBy(desc(claims.updatedAt));
   }
 
   async getDashboardStats(orgId: string): Promise<{

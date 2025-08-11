@@ -1,255 +1,396 @@
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
-interface DraftDB extends DBSchema {
-  drafts: {
+/**
+ * IndexedDB integration for offline functionality
+ * 
+ * Stores draft claims, user data, and sync queue for background processing
+ * when connection is restored.
+ */
+
+interface MedLinkClaimsDB extends DBSchema {
+  claims: {
     key: string;
     value: {
       id: string;
       data: any;
-      timestamp: number;
-      type: string;
+      status: 'draft' | 'pending_sync' | 'synced';
+      createdAt: Date;
+      updatedAt: Date;
     };
   };
-  queue: {
+  preauths: {
     key: string;
     value: {
       id: string;
-      operation: string;
       data: any;
-      timestamp: number;
+      status: 'draft' | 'pending_sync' | 'synced';
+      createdAt: Date;
+      updatedAt: Date;
+    };
+  };
+  files: {
+    key: string;
+    value: {
+      id: string;
+      filename: string;
+      blob: Blob;
+      claimId?: string;
+      preauthId?: string;
+      status: 'pending_upload' | 'uploaded';
+      createdAt: Date;
+    };
+  };
+  syncQueue: {
+    key: string;
+    value: {
+      id: string;
+      type: 'claim' | 'preauth' | 'file';
+      action: 'create' | 'update' | 'delete';
+      data: any;
+      createdAt: Date;
       retryCount: number;
+      lastError?: string;
+    };
+  };
+  userSettings: {
+    key: string;
+    value: {
+      key: string;
+      value: any;
+      updatedAt: Date;
     };
   };
 }
 
-let dbPromise: Promise<IDBPDatabase<DraftDB>>;
+class IndexedDBManager {
+  private db: IDBPDatabase<MedLinkClaimsDB> | null = null;
+  private readonly dbName = 'MedLinkClaimsDB';
+  private readonly version = 1;
 
-function getDB() {
-  if (!dbPromise) {
-    dbPromise = openDB<DraftDB>('medlink-claims-db', 1, {
-      upgrade(db) {
-        // Create drafts store for offline drafts
-        if (!db.objectStoreNames.contains('drafts')) {
-          db.createObjectStore('drafts', { keyPath: 'id' });
-        }
-        
-        // Create queue store for background sync
-        if (!db.objectStoreNames.contains('queue')) {
-          db.createObjectStore('queue', { keyPath: 'id' });
-        }
-      },
-    });
+  async init(): Promise<void> {
+    if (this.db) return;
+
+    try {
+      this.db = await openDB<MedLinkClaimsDB>(this.dbName, this.version, {
+        upgrade(db) {
+          // Claims store
+          if (!db.objectStoreNames.contains('claims')) {
+            const claimsStore = db.createObjectStore('claims', { keyPath: 'id' });
+            claimsStore.createIndex('status', 'status');
+            claimsStore.createIndex('createdAt', 'createdAt');
+          }
+
+          // Pre-authorizations store
+          if (!db.objectStoreNames.contains('preauths')) {
+            const preauthsStore = db.createObjectStore('preauths', { keyPath: 'id' });
+            preauthsStore.createIndex('status', 'status');
+            preauthsStore.createIndex('createdAt', 'createdAt');
+          }
+
+          // Files store
+          if (!db.objectStoreNames.contains('files')) {
+            const filesStore = db.createObjectStore('files', { keyPath: 'id' });
+            filesStore.createIndex('claimId', 'claimId');
+            filesStore.createIndex('preauthId', 'preauthId');
+            filesStore.createIndex('status', 'status');
+          }
+
+          // Sync queue store
+          if (!db.objectStoreNames.contains('syncQueue')) {
+            const syncQueueStore = db.createObjectStore('syncQueue', { keyPath: 'id' });
+            syncQueueStore.createIndex('type', 'type');
+            syncQueueStore.createIndex('createdAt', 'createdAt');
+          }
+
+          // User settings store
+          if (!db.objectStoreNames.contains('userSettings')) {
+            db.createObjectStore('userSettings', { keyPath: 'key' });
+          }
+        },
+      });
+
+      console.log('[IndexedDB] Database initialized successfully');
+    } catch (error) {
+      console.error('[IndexedDB] Failed to initialize database:', error);
+      throw error;
+    }
   }
-  return dbPromise;
-}
 
-// Draft management functions
-export async function saveOfflineDraft(key: string, data: any): Promise<void> {
-  try {
-    const db = await getDB();
-    const draft = {
-      id: key,
-      data,
-      timestamp: Date.now(),
-      type: 'draft',
-    };
+  private ensureDB(): IDBPDatabase<MedLinkClaimsDB> {
+    if (!this.db) {
+      throw new Error('Database not initialized. Call init() first.');
+    }
+    return this.db;
+  }
+
+  // Claims operations
+  async saveDraftClaim(claimData: any): Promise<string> {
+    const db = this.ensureDB();
+    const id = claimData.id || `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    await db.put('drafts', draft);
-  } catch (error) {
-    console.error('Failed to save offline draft:', error);
-    throw error;
-  }
-}
-
-export async function getOfflineDraft(key: string): Promise<any> {
-  try {
-    const db = await getDB();
-    const draft = await db.get('drafts', key);
-    return draft?.data;
-  } catch (error) {
-    console.error('Failed to get offline draft:', error);
-    return null;
-  }
-}
-
-export async function getOfflineDrafts(): Promise<Array<{ key: string; data: any; timestamp: number }>> {
-  try {
-    const db = await getDB();
-    const drafts = await db.getAll('drafts');
-    return drafts.map(draft => ({
-      key: draft.id,
-      data: draft.data,
-      timestamp: draft.timestamp,
-    }));
-  } catch (error) {
-    console.error('Failed to get offline drafts:', error);
-    return [];
-  }
-}
-
-export async function clearOfflineDraft(key: string): Promise<void> {
-  try {
-    const db = await getDB();
-    await db.delete('drafts', key);
-  } catch (error) {
-    console.error('Failed to clear offline draft:', error);
-    throw error;
-  }
-}
-
-export async function clearAllDrafts(): Promise<void> {
-  try {
-    const db = await getDB();
-    await db.clear('drafts');
-  } catch (error) {
-    console.error('Failed to clear all drafts:', error);
-    throw error;
-  }
-}
-
-// Background sync queue functions
-export async function addToSyncQueue(id: string, operation: string, data: any): Promise<void> {
-  try {
-    const db = await getDB();
-    const queueItem = {
+    const claim = {
       id,
-      operation,
+      data: claimData,
+      status: 'draft' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await db.put('claims', claim);
+    console.log('[IndexedDB] Draft claim saved:', id);
+    return id;
+  }
+
+  async getDraftClaims(): Promise<any[]> {
+    const db = this.ensureDB();
+    const claims = await db.getAllFromIndex('claims', 'status', 'draft');
+    return claims.map(claim => claim.data);
+  }
+
+  async getPendingSyncClaims(): Promise<any[]> {
+    const db = this.ensureDB();
+    const claims = await db.getAllFromIndex('claims', 'status', 'pending_sync');
+    return claims;
+  }
+
+  async updateClaimStatus(id: string, status: 'draft' | 'pending_sync' | 'synced'): Promise<void> {
+    const db = this.ensureDB();
+    const claim = await db.get('claims', id);
+    if (claim) {
+      claim.status = status;
+      claim.updatedAt = new Date();
+      await db.put('claims', claim);
+    }
+  }
+
+  async deleteClaim(id: string): Promise<void> {
+    const db = this.ensureDB();
+    await db.delete('claims', id);
+  }
+
+  // Pre-authorization operations
+  async saveDraftPreAuth(preauthData: any): Promise<string> {
+    const db = this.ensureDB();
+    const id = preauthData.id || `preauth_draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const preauth = {
+      id,
+      data: preauthData,
+      status: 'draft' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await db.put('preauths', preauth);
+    console.log('[IndexedDB] Draft pre-auth saved:', id);
+    return id;
+  }
+
+  async getDraftPreAuths(): Promise<any[]> {
+    const db = this.ensureDB();
+    const preauths = await db.getAllFromIndex('preauths', 'status', 'draft');
+    return preauths.map(preauth => preauth.data);
+  }
+
+  // File operations
+  async saveFileForUpload(
+    filename: string, 
+    blob: Blob, 
+    claimId?: string, 
+    preauthId?: string
+  ): Promise<string> {
+    const db = this.ensureDB();
+    const id = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const file = {
+      id,
+      filename,
+      blob,
+      claimId,
+      preauthId,
+      status: 'pending_upload' as const,
+      createdAt: new Date(),
+    };
+
+    await db.put('files', file);
+    console.log('[IndexedDB] File saved for upload:', filename);
+    return id;
+  }
+
+  async getPendingFiles(): Promise<any[]> {
+    const db = this.ensureDB();
+    return await db.getAllFromIndex('files', 'status', 'pending_upload');
+  }
+
+  async updateFileStatus(id: string, status: 'pending_upload' | 'uploaded'): Promise<void> {
+    const db = this.ensureDB();
+    const file = await db.get('files', id);
+    if (file) {
+      file.status = status;
+      await db.put('files', file);
+    }
+  }
+
+  async deleteFile(id: string): Promise<void> {
+    const db = this.ensureDB();
+    await db.delete('files', id);
+  }
+
+  // Sync queue operations
+  async addToSyncQueue(
+    type: 'claim' | 'preauth' | 'file',
+    action: 'create' | 'update' | 'delete',
+    data: any
+  ): Promise<string> {
+    const db = this.ensureDB();
+    const id = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const syncItem = {
+      id,
+      type,
+      action,
       data,
-      timestamp: Date.now(),
+      createdAt: new Date(),
       retryCount: 0,
     };
-    
-    await db.put('queue', queueItem);
-  } catch (error) {
-    console.error('Failed to add to sync queue:', error);
-    throw error;
-  }
-}
 
-export async function getSyncQueue(): Promise<Array<{
-  id: string;
-  operation: string;
-  data: any;
-  timestamp: number;
-  retryCount: number;
-}>> {
-  try {
-    const db = await getDB();
-    return await db.getAll('queue');
-  } catch (error) {
-    console.error('Failed to get sync queue:', error);
-    return [];
+    await db.put('syncQueue', syncItem);
+    console.log('[IndexedDB] Added to sync queue:', { type, action, id });
+    return id;
   }
-}
 
-export async function removeFromSyncQueue(id: string): Promise<void> {
-  try {
-    const db = await getDB();
-    await db.delete('queue', id);
-  } catch (error) {
-    console.error('Failed to remove from sync queue:', error);
-    throw error;
+  async getSyncQueue(): Promise<any[]> {
+    const db = this.ensureDB();
+    return await db.getAll('syncQueue');
   }
-}
 
-export async function updateSyncQueueItem(id: string, updates: Partial<{
-  operation: string;
-  data: any;
-  retryCount: number;
-}>): Promise<void> {
-  try {
-    const db = await getDB();
-    const existing = await db.get('queue', id);
-    if (existing) {
-      const updated = { ...existing, ...updates };
-      await db.put('queue', updated);
+  async updateSyncItem(id: string, updates: Partial<any>): Promise<void> {
+    const db = this.ensureDB();
+    const item = await db.get('syncQueue', id);
+    if (item) {
+      Object.assign(item, updates);
+      await db.put('syncQueue', item);
     }
-  } catch (error) {
-    console.error('Failed to update sync queue item:', error);
-    throw error;
   }
-}
 
-export async function clearSyncQueue(): Promise<void> {
-  try {
-    const db = await getDB();
-    await db.clear('queue');
-  } catch (error) {
-    console.error('Failed to clear sync queue:', error);
-    throw error;
+  async removeSyncItem(id: string): Promise<void> {
+    const db = this.ensureDB();
+    await db.delete('syncQueue', id);
   }
-}
 
-// Utility functions
-export async function getDatabaseSize(): Promise<{ drafts: number; queue: number }> {
-  try {
-    const db = await getDB();
-    const drafts = await db.getAll('drafts');
-    const queue = await db.getAll('queue');
-    
-    return {
-      drafts: drafts.length,
-      queue: queue.length,
+  // User settings operations
+  async saveSetting(key: string, value: any): Promise<void> {
+    const db = this.ensureDB();
+    const setting = {
+      key,
+      value,
+      updatedAt: new Date(),
     };
-  } catch (error) {
-    console.error('Failed to get database size:', error);
-    return { drafts: 0, queue: 0 };
+    await db.put('userSettings', setting);
   }
-}
 
-export async function cleanupOldDrafts(maxAge: number = 7 * 24 * 60 * 60 * 1000): Promise<number> {
-  try {
-    const db = await getDB();
-    const drafts = await db.getAll('drafts');
-    const cutoff = Date.now() - maxAge;
-    let deletedCount = 0;
-    
-    for (const draft of drafts) {
-      if (draft.timestamp < cutoff) {
-        await db.delete('drafts', draft.id);
-        deletedCount++;
+  async getSetting(key: string): Promise<any> {
+    const db = this.ensureDB();
+    const setting = await db.get('userSettings', key);
+    return setting?.value;
+  }
+
+  async getAllSettings(): Promise<Record<string, any>> {
+    const db = this.ensureDB();
+    const settings = await db.getAll('userSettings');
+    return settings.reduce((acc, setting) => {
+      acc[setting.key] = setting.value;
+      return acc;
+    }, {} as Record<string, any>);
+  }
+
+  // Cleanup operations
+  async cleanupOldData(olderThanDays = 30): Promise<void> {
+    const db = this.ensureDB();
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+
+    // Clean up old synced claims
+    const syncedClaims = await db.getAllFromIndex('claims', 'status', 'synced');
+    for (const claim of syncedClaims) {
+      if (claim.updatedAt < cutoffDate) {
+        await db.delete('claims', claim.id);
       }
     }
+
+    // Clean up old synced preauths
+    const syncedPreauths = await db.getAllFromIndex('preauths', 'status', 'synced');
+    for (const preauth of syncedPreauths) {
+      if (preauth.updatedAt < cutoffDate) {
+        await db.delete('preauths', preauth.id);
+      }
+    }
+
+    // Clean up uploaded files
+    const uploadedFiles = await db.getAllFromIndex('files', 'status', 'uploaded');
+    for (const file of uploadedFiles) {
+      if (file.createdAt < cutoffDate) {
+        await db.delete('files', file.id);
+      }
+    }
+
+    console.log('[IndexedDB] Cleanup completed');
+  }
+
+  // Database info
+  async getStorageInfo(): Promise<{
+    claims: number;
+    preauths: number;
+    files: number;
+    syncQueue: number;
+    settings: number;
+  }> {
+    const db = this.ensureDB();
     
-    return deletedCount;
-  } catch (error) {
-    console.error('Failed to cleanup old drafts:', error);
-    return 0;
+    const [claims, preauths, files, syncQueue, settings] = await Promise.all([
+      db.count('claims'),
+      db.count('preauths'),
+      db.count('files'),
+      db.count('syncQueue'),
+      db.count('userSettings'),
+    ]);
+
+    return { claims, preauths, files, syncQueue, settings };
+  }
+
+  // Close database connection
+  async close(): Promise<void> {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+      console.log('[IndexedDB] Database connection closed');
+    }
   }
 }
 
-// React hook for using IndexedDB
-export function useIndexedDB() {
-  const saveDraft = async (key: string, data: any) => {
-    await saveOfflineDraft(key, data);
-  };
+// Singleton instance
+export const idbManager = new IndexedDBManager();
 
-  const getDraft = async (key: string) => {
-    return await getOfflineDraft(key);
-  };
-
-  const clearDraft = async (key: string) => {
-    await clearOfflineDraft(key);
-  };
-
-  const addToQueue = async (id: string, operation: string, data: any) => {
-    await addToSyncQueue(id, operation, data);
-  };
-
-  const getQueue = async () => {
-    return await getSyncQueue();
-  };
-
-  const removeFromQueue = async (id: string) => {
-    await removeFromSyncQueue(id);
-  };
-
-  return {
-    saveDraft,
-    getDraft,
-    clearDraft,
-    addToQueue,
-    getQueue,
-    removeFromQueue,
-  };
+// Auto-initialize when module is imported
+if (typeof window !== 'undefined') {
+  idbManager.init().catch(error => {
+    console.error('[IndexedDB] Auto-initialization failed:', error);
+  });
 }
+
+// Convenience functions
+export const saveDraftClaim = (claimData: any) => idbManager.saveDraftClaim(claimData);
+export const getDraftClaims = () => idbManager.getDraftClaims();
+export const saveDraftPreAuth = (preauthData: any) => idbManager.saveDraftPreAuth(preauthData);
+export const getDraftPreAuths = () => idbManager.getDraftPreAuths();
+export const saveFileForUpload = (filename: string, blob: Blob, claimId?: string, preauthId?: string) => 
+  idbManager.saveFileForUpload(filename, blob, claimId, preauthId);
+export const getPendingFiles = () => idbManager.getPendingFiles();
+export const addToSyncQueue = (type: 'claim' | 'preauth' | 'file', action: 'create' | 'update' | 'delete', data: any) =>
+  idbManager.addToSyncQueue(type, action, data);
+export const getSyncQueue = () => idbManager.getSyncQueue();
+
+// Additional convenience functions for backwards compatibility
+export const saveOfflineDraft = (key: string, data: any) => idbManager.saveSetting(key, data);
+export const getOfflineDraft = (key: string) => idbManager.getSetting(key);
+export const clearOfflineDraft = (key: string) => idbManager.saveSetting(key, null);
