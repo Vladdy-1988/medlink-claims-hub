@@ -1,225 +1,164 @@
 import { useState, useRef, useCallback } from "react";
+import { Upload, X, FileText, Image, File, AlertCircle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { 
-  Upload, 
-  File, 
-  Image, 
-  X, 
-  Check, 
-  AlertTriangle, 
-  Download,
-  Eye,
-  Paperclip
-} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+export interface FileUploadFile {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  type: string;
+  status: 'pending' | 'uploading' | 'complete' | 'error';
+  progress: number;
+  error?: string;
+  url?: string;
+  kind?: 'photo' | 'pdf' | 'note' | 'other';
+}
+
 interface FileUploadProps {
-  claimId?: string;
-  preAuthId?: string;
+  accept?: string;
+  multiple?: boolean;
   maxFiles?: number;
-  maxFileSize?: number; // in bytes
-  acceptedTypes?: string[];
-  onUploadComplete?: (files: UploadedFile[]) => void;
+  maxSize?: number; // in bytes
+  onFilesChange: (files: FileUploadFile[]) => void;
+  onUpload?: (files: FileUploadFile[]) => Promise<void>;
   className?: string;
   disabled?: boolean;
-  compact?: boolean;
 }
 
-interface UploadedFile {
-  id: string;
-  filename: string;
-  size: number;
-  mimeType: string;
-  url: string;
-  uploadedAt: string;
-  uploadedBy: string;
-}
-
-interface FileWithPreview extends File {
-  id: string;
-  preview?: string;
-  uploadProgress?: number;
-  uploadStatus?: 'pending' | 'uploading' | 'success' | 'error';
-  errorMessage?: string;
-}
-
-const ACCEPTED_FILE_TYPES = {
-  'application/pdf': { icon: File, label: 'PDF Document' },
-  'image/jpeg': { icon: Image, label: 'JPEG Image' },
-  'image/jpg': { icon: Image, label: 'JPG Image' },
-  'image/png': { icon: Image, label: 'PNG Image' },
-  'image/tiff': { icon: Image, label: 'TIFF Image' },
-  'text/plain': { icon: File, label: 'Text Document' },
-  'application/msword': { icon: File, label: 'Word Document' },
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { icon: File, label: 'Word Document' },
+const getFileIcon = (type: string) => {
+  if (type.startsWith('image/')) return Image;
+  if (type === 'application/pdf') return FileText;
+  return File;
 };
 
+const getFileKind = (type: string): FileUploadFile['kind'] => {
+  if (type.startsWith('image/')) return 'photo';
+  if (type === 'application/pdf') return 'pdf';
+  return 'other';
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+/**
+ * FileUpload - A comprehensive file upload component with drag & drop
+ * 
+ * Features:
+ * - Drag and drop file upload
+ * - Multiple file selection
+ * - File type validation and filtering
+ * - File size limits
+ * - Upload progress tracking
+ * - Preview for images
+ * - Error handling and validation
+ * - Accessible design with keyboard navigation
+ * - Mobile-friendly responsive design
+ */
 export function FileUpload({
-  claimId,
-  preAuthId,
-  maxFiles = 10,
-  maxFileSize = 10 * 1024 * 1024, // 10MB
-  acceptedTypes = Object.keys(ACCEPTED_FILE_TYPES),
-  onUploadComplete,
+  accept = "image/*,.pdf,.doc,.docx",
+  multiple = true,
+  maxFiles = 5,
+  maxSize = 10 * 1024 * 1024, // 10MB
+  onFilesChange,
+  onUpload,
   className,
   disabled = false,
-  compact = false
 }: FileUploadProps) {
-  const [files, setFiles] = useState<FileWithPreview[]>([]);
+  const [files, setFiles] = useState<FileUploadFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  // Upload mutation
-  const uploadMutation = useMutation({
-    mutationFn: async (file: FileWithPreview) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (claimId) formData.append('claimId', claimId);
-      if (preAuthId) formData.append('preAuthId', preAuthId);
-
-      return apiRequest('/api/files/upload', {
-        method: 'POST',
-        body: formData,
-      });
-    },
-    onSuccess: (data, file) => {
-      setFiles(prev => prev.map(f => 
-        f.id === file.id 
-          ? { ...f, uploadStatus: 'success', uploadProgress: 100 }
-          : f
-      ));
-      
-      // Invalidate related queries
-      if (claimId) {
-        queryClient.invalidateQueries({ queryKey: ['/api/claims', claimId, 'files'] });
-      }
-      if (preAuthId) {
-        queryClient.invalidateQueries({ queryKey: ['/api/preauths', preAuthId, 'files'] });
-      }
-
-      toast({
-        title: "Upload successful",
-        description: `${file.name} has been uploaded successfully.`,
-      });
-    },
-    onError: (error, file) => {
-      setFiles(prev => prev.map(f => 
-        f.id === file.id 
-          ? { ...f, uploadStatus: 'error', errorMessage: error.message }
-          : f
-      ));
-
-      toast({
-        title: "Upload failed",
-        description: `Failed to upload ${file.name}: ${error.message}`,
-        variant: "destructive",
-      });
-    },
-  });
+  const updateFiles = useCallback((newFiles: FileUploadFile[]) => {
+    setFiles(newFiles);
+    onFilesChange(newFiles);
+  }, [onFilesChange]);
 
   const validateFile = (file: File): string | null => {
-    if (file.size > maxFileSize) {
-      return `File size must be less than ${formatFileSize(maxFileSize)}`;
+    // Check file size
+    if (file.size > maxSize) {
+      return `File size must be less than ${formatFileSize(maxSize)}`;
     }
 
-    if (!acceptedTypes.includes(file.type)) {
-      return `File type ${file.type} is not supported`;
+    // Check file type
+    if (accept && accept !== "*") {
+      const acceptedTypes = accept.split(',').map(type => type.trim());
+      const isAccepted = acceptedTypes.some(acceptedType => {
+        if (acceptedType.startsWith('.')) {
+          // Extension check
+          return file.name.toLowerCase().endsWith(acceptedType.toLowerCase());
+        } else if (acceptedType.includes('*')) {
+          // MIME type wildcard check
+          const [type] = acceptedType.split('/');
+          return file.type.startsWith(type);
+        } else {
+          // Exact MIME type check
+          return file.type === acceptedType;
+        }
+      });
+
+      if (!isAccepted) {
+        return `File type not accepted. Allowed types: ${accept}`;
+      }
     }
 
     return null;
   };
 
-  const addFiles = useCallback((newFiles: File[]) => {
-    const validFiles: FileWithPreview[] = [];
-    const errors: string[] = [];
+  const processFiles = (fileList: FileList) => {
+    const newFiles: FileUploadFile[] = [];
+    
+    Array.from(fileList).forEach((file) => {
+      // Check max files limit
+      if (files.length + newFiles.length >= maxFiles) {
+        return;
+      }
 
-    newFiles.forEach(file => {
       const error = validateFile(file);
-      if (error) {
-        errors.push(`${file.name}: ${error}`);
-        return;
-      }
+      const fileUpload: FileUploadFile = {
+        id: Math.random().toString(36).substr(2, 9),
+        file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: error ? 'error' : 'pending',
+        progress: 0,
+        error,
+        kind: getFileKind(file.type),
+      };
 
-      if (files.length + validFiles.length >= maxFiles) {
-        errors.push(`Maximum ${maxFiles} files allowed`);
-        return;
-      }
-
-      const fileWithPreview: FileWithPreview = Object.assign(file, {
-        id: `${Date.now()}-${file.name}`,
-        uploadStatus: 'pending' as const,
-        uploadProgress: 0,
-      });
-
-      // Create preview for images
-      if (file.type.startsWith('image/')) {
-        fileWithPreview.preview = URL.createObjectURL(file);
-      }
-
-      validFiles.push(fileWithPreview);
+      newFiles.push(fileUpload);
     });
 
-    if (errors.length > 0) {
-      toast({
-        title: "Some files could not be added",
-        description: errors.join('. '),
-        variant: "destructive",
-      });
-    }
-
-    if (validFiles.length > 0) {
-      setFiles(prev => [...prev, ...validFiles]);
-      
-      // Start uploading files immediately
-      validFiles.forEach(file => {
-        setFiles(prev => prev.map(f => 
-          f.id === file.id 
-            ? { ...f, uploadStatus: 'uploading' }
-            : f
-        ));
-        uploadMutation.mutate(file);
-      });
-    }
-  }, [files.length, maxFiles, maxFileSize, acceptedTypes, toast, uploadMutation]);
-
-  const removeFile = (fileId: string) => {
-    setFiles(prev => {
-      const file = prev.find(f => f.id === fileId);
-      if (file?.preview) {
-        URL.revokeObjectURL(file.preview);
-      }
-      return prev.filter(f => f.id !== fileId);
-    });
+    updateFiles([...files, ...newFiles]);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files || []);
-    addFiles(selectedFiles);
+  const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    if (fileList && fileList.length > 0) {
+      processFiles(fileList);
+    }
     // Reset input value to allow selecting the same file again
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const handleDrop = (event: React.DragEvent) => {
-    event.preventDefault();
-    setIsDragOver(false);
-    
-    const droppedFiles = Array.from(event.dataTransfer.files);
-    addFiles(droppedFiles);
-  };
-
   const handleDragOver = (event: React.DragEvent) => {
     event.preventDefault();
-    setIsDragOver(true);
+    if (!disabled) {
+      setIsDragOver(true);
+    }
   };
 
   const handleDragLeave = (event: React.DragEvent) => {
@@ -227,107 +166,194 @@ export function FileUpload({
     setIsDragOver(false);
   };
 
-  const openFileDialog = () => {
-    fileInputRef.current?.click();
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    
+    if (disabled) return;
+
+    const fileList = event.dataTransfer.files;
+    if (fileList && fileList.length > 0) {
+      processFiles(fileList);
+    }
   };
 
-  if (compact) {
-    return (
-      <div className={cn("space-y-2", className)} data-testid="file-upload-compact">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={openFileDialog}
-          disabled={disabled || files.length >= maxFiles}
-          className="w-full"
-          data-testid="button-upload-files"
-        >
-          <Paperclip className="h-4 w-4 mr-2" />
-          Attach Files ({files.length}/{maxFiles})
-        </Button>
+  const removeFile = (fileId: string) => {
+    const updatedFiles = files.filter(f => f.id !== fileId);
+    updateFiles(updatedFiles);
+  };
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={acceptedTypes.join(',')}
-          onChange={handleFileSelect}
-          className="hidden"
-          data-testid="input-file-hidden"
-        />
+  const handleUpload = async () => {
+    if (!onUpload || isUploading) return;
 
-        {files.length > 0 && (
-          <div className="space-y-1">
-            {files.map(file => (
-              <FileItem key={file.id} file={file} onRemove={removeFile} compact />
-            ))}
-          </div>
-        )}
-      </div>
+    setIsUploading(true);
+    
+    // Update all pending files to uploading status
+    const uploadingFiles = files.map(file => 
+      file.status === 'pending' ? { ...file, status: 'uploading' as const } : file
     );
-  }
+    updateFiles(uploadingFiles);
+
+    try {
+      await onUpload(uploadingFiles);
+      
+      // Update all uploading files to complete status
+      const completedFiles = uploadingFiles.map(file => 
+        file.status === 'uploading' ? { ...file, status: 'complete' as const, progress: 100 } : file
+      );
+      updateFiles(completedFiles);
+    } catch (error) {
+      // Update files with error status
+      const errorFiles = uploadingFiles.map(file => 
+        file.status === 'uploading' ? { 
+          ...file, 
+          status: 'error' as const, 
+          error: error instanceof Error ? error.message : 'Upload failed' 
+        } : file
+      );
+      updateFiles(errorFiles);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const openFileDialog = () => {
+    if (!disabled && fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
 
   return (
-    <div className={cn("space-y-4", className)} data-testid="file-upload">
-      {/* Drop Zone */}
+    <div className={cn("space-y-4", className)}>
+      {/* Upload Area */}
       <Card
         className={cn(
-          "border-2 border-dashed transition-colors cursor-pointer",
-          isDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25",
+          "transition-all duration-200 cursor-pointer",
+          isDragOver && !disabled && "border-primary-400 bg-primary-50",
           disabled && "opacity-50 cursor-not-allowed"
         )}
-        onDrop={handleDrop}
+        onClick={openFileDialog}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={!disabled ? openFileDialog : undefined}
-        data-testid="drop-zone"
+        onDrop={handleDrop}
+        data-testid="file-upload-area"
       >
         <CardContent className="p-8 text-center">
-          <Upload className={cn(
-            "h-12 w-12 mx-auto mb-4",
-            isDragOver ? "text-primary" : "text-muted-foreground"
-          )} />
-          <h3 className="text-lg font-medium mb-2">
-            {isDragOver ? "Drop files here" : "Upload files"}
-          </h3>
-          <p className="text-muted-foreground mb-4">
-            Drag and drop files here, or click to select files
-          </p>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Maximum {maxFiles} files, up to {formatFileSize(maxFileSize)} each</p>
-            <p>Supported: PDF, Images (JPEG, PNG, TIFF), Word documents</p>
+          <div className="flex flex-col items-center space-y-4">
+            <div className={cn(
+              "w-12 h-12 rounded-full flex items-center justify-center",
+              isDragOver && !disabled ? "bg-primary-100" : "bg-slate-100"
+            )}>
+              <Upload className={cn(
+                "h-6 w-6",
+                isDragOver && !disabled ? "text-primary-600" : "text-slate-600"
+              )} />
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-slate-900">
+                {isDragOver && !disabled ? "Drop files here" : "Upload files"}
+              </h3>
+              <p className="text-sm text-slate-600 mt-1">
+                Drag and drop files here, or click to browse
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                Max {maxFiles} files, {formatFileSize(maxSize)} each. Supported: {accept}
+              </p>
+            </div>
           </div>
-          
-          <Button 
-            type="button" 
-            variant="outline" 
-            className="mt-4"
-            disabled={disabled || files.length >= maxFiles}
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            Choose Files
-          </Button>
         </CardContent>
       </Card>
 
+      {/* Hidden File Input */}
       <input
         ref={fileInputRef}
         type="file"
-        multiple
-        accept={acceptedTypes.join(',')}
-        onChange={handleFileSelect}
+        accept={accept}
+        multiple={multiple}
+        onChange={handleFileInput}
         className="hidden"
-        data-testid="input-file-hidden"
+        disabled={disabled}
+        data-testid="file-input"
       />
 
       {/* File List */}
       {files.length > 0 && (
         <div className="space-y-2">
-          <h4 className="font-medium">Uploaded Files ({files.length})</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-slate-900">
+              Selected Files ({files.length})
+            </h4>
+            {files.some(f => f.status === 'pending' || f.status === 'error') && onUpload && (
+              <Button
+                onClick={handleUpload}
+                disabled={isUploading || disabled}
+                size="sm"
+                data-testid="upload-button"
+              >
+                {isUploading ? "Uploading..." : "Upload All"}
+              </Button>
+            )}
+          </div>
+
           <div className="space-y-2">
-            {files.map(file => (
-              <FileItem key={file.id} file={file} onRemove={removeFile} />
-            ))}
+            {files.map((file) => {
+              const Icon = getFileIcon(file.type);
+              
+              return (
+                <Card key={file.id} className="p-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-shrink-0">
+                      <Icon className="h-8 w-8 text-slate-400" />
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {formatFileSize(file.size)}
+                            {file.kind && (
+                              <Badge variant="secondary" className="ml-2 text-xs">
+                                {file.kind}
+                              </Badge>
+                            )}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <StatusIcon status={file.status} />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFile(file.id);
+                            }}
+                            className="h-6 w-6 p-0"
+                            data-testid={`remove-file-${file.id}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      {file.status === 'uploading' && (
+                        <Progress value={file.progress} className="mt-2 h-1" />
+                      )}
+                      
+                      {/* Error Message */}
+                      {file.error && (
+                        <p className="text-xs text-red-600 mt-1">{file.error}</p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
@@ -335,131 +361,18 @@ export function FileUpload({
   );
 }
 
-interface FileItemProps {
-  file: FileWithPreview;
-  onRemove: (fileId: string) => void;
-  compact?: boolean;
-}
-
-function FileItem({ file, onRemove, compact = false }: FileItemProps) {
-  const fileType = ACCEPTED_FILE_TYPES[file.type as keyof typeof ACCEPTED_FILE_TYPES];
-  const FileIcon = fileType?.icon || File;
-
-  if (compact) {
-    return (
-      <div className="flex items-center space-x-2 p-2 bg-muted/50 rounded text-sm" data-testid={`file-item-${file.id}`}>
-        <FileIcon className="h-4 w-4 text-muted-foreground" />
-        <span className="flex-1 truncate">{file.name}</span>
-        <Badge variant="outline" className="text-xs">
-          {formatFileSize(file.size)}
-        </Badge>
-        {file.uploadStatus === 'uploading' && (
-          <Badge variant="secondary">Uploading...</Badge>
-        )}
-        {file.uploadStatus === 'success' && (
-          <Check className="h-4 w-4 text-green-600" />
-        )}
-        {file.uploadStatus === 'error' && (
-          <AlertTriangle className="h-4 w-4 text-red-600" />
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove(file.id);
-          }}
-          data-testid={`button-remove-${file.id}`}
-        >
-          <X className="h-3 w-3" />
-        </Button>
-      </div>
-    );
+/**
+ * Status icon component for file upload states
+ */
+function StatusIcon({ status }: { status: FileUploadFile['status'] }) {
+  switch (status) {
+    case 'complete':
+      return <Check className="h-4 w-4 text-green-600" />;
+    case 'error':
+      return <AlertCircle className="h-4 w-4 text-red-600" />;
+    case 'uploading':
+      return <div className="h-4 w-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />;
+    default:
+      return null;
   }
-
-  return (
-    <Card data-testid={`file-item-${file.id}`}>
-      <CardContent className="p-4">
-        <div className="flex items-start space-x-4">
-          {/* File Icon/Preview */}
-          <div className="flex-shrink-0">
-            {file.preview ? (
-              <img 
-                src={file.preview} 
-                alt={file.name}
-                className="w-12 h-12 object-cover rounded border"
-              />
-            ) : (
-              <div className="w-12 h-12 flex items-center justify-center bg-muted rounded border">
-                <FileIcon className="h-6 w-6 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-
-          {/* File Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium truncate">{file.name}</h4>
-              <div className="flex items-center space-x-2">
-                {file.uploadStatus === 'success' && (
-                  <Button variant="ghost" size="sm">
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onRemove(file.id)}
-                  data-testid={`button-remove-${file.id}`}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4 mt-1">
-              <span className="text-sm text-muted-foreground">
-                {formatFileSize(file.size)}
-              </span>
-              <Badge variant="outline" className="text-xs">
-                {fileType?.label || file.type}
-              </Badge>
-            </div>
-
-            {/* Upload Progress */}
-            {file.uploadStatus === 'uploading' && (
-              <div className="mt-2">
-                <Progress value={file.uploadProgress || 0} className="h-2" />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Uploading... {file.uploadProgress || 0}%
-                </p>
-              </div>
-            )}
-
-            {/* Upload Status */}
-            {file.uploadStatus === 'success' && (
-              <div className="flex items-center space-x-1 mt-2 text-green-600">
-                <Check className="h-4 w-4" />
-                <span className="text-sm">Upload complete</span>
-              </div>
-            )}
-
-            {file.uploadStatus === 'error' && (
-              <div className="flex items-center space-x-1 mt-2 text-red-600">
-                <AlertTriangle className="h-4 w-4" />
-                <span className="text-sm">{file.errorMessage || 'Upload failed'}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function formatFileSize(bytes: number): string {
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  if (bytes === 0) return '0 B';
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
 }

@@ -96,17 +96,17 @@ export default function NewClaim() {
     return () => clearTimeout(saveTimer);
   }, [formData, attachments, currentStep]);
 
-  const { data: patients } = useQuery({
+  const { data: patients = [] } = useQuery({
     queryKey: ["/api/patients"],
     retry: false,
   });
 
-  const { data: providers } = useQuery({
+  const { data: providers = [] } = useQuery({
     queryKey: ["/api/providers"],
     retry: false,
   });
 
-  const { data: insurers } = useQuery({
+  const { data: insurers = [] } = useQuery({
     queryKey: ["/api/insurers"],
     retry: false,
   });

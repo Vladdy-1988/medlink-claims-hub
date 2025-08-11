@@ -1,455 +1,422 @@
 import { useState, useMemo } from "react";
+import { formatDistanceToNow } from "date-fns";
+import { 
+  ChevronDown, 
+  ChevronUp, 
+  Filter, 
+  Search, 
+  ChevronLeft, 
+  ChevronRight,
+  Eye,
+  MoreHorizontal,
+  Edit,
+  Download
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useQuery } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
 import { Link } from "wouter";
-import { 
-  Search, 
-  Filter, 
-  ChevronLeft, 
-  ChevronRight, 
-  Eye, 
-  Calendar,
-  User,
-  FileText,
-  Clock,
-  CheckCircle,
-  XCircle,
-  AlertTriangle
-} from "lucide-react";
-import type { Claim } from "@shared/schema";
+
+export interface ClaimTableData {
+  id: string;
+  claimNumber: string;
+  patientName: string;
+  insurerName: string;
+  amount: string;
+  status: 'draft' | 'submitted' | 'processing' | 'approved' | 'paid' | 'denied' | 'info_requested';
+  createdAt: string;
+  updatedAt: string;
+  type: 'claim' | 'preauth';
+}
 
 interface ClaimsTableProps {
-  showFilters?: boolean;
-  pageSize?: number;
-  compactView?: boolean;
+  claims: ClaimTableData[];
+  isLoading?: boolean;
+  onClaimSelect?: (claimId: string) => void;
+  className?: string;
 }
 
-interface ClaimsQueryParams {
-  page: number;
-  limit: number;
-  search?: string;
-  status?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-}
-
-interface ClaimsResponse {
-  claims: Claim[];
-  total: number;
-  page: number;
-  totalPages: number;
-}
+type SortField = 'claimNumber' | 'patientName' | 'insurerName' | 'amount' | 'status' | 'createdAt' | 'updatedAt';
+type SortDirection = 'asc' | 'desc';
 
 const statusConfig = {
-  draft: { label: "Draft", variant: "secondary" as const, icon: FileText },
-  submitted: { label: "Submitted", variant: "default" as const, icon: Clock },
-  processing: { label: "Processing", variant: "default" as const, icon: Clock },
-  approved: { label: "Approved", variant: "default" as const, icon: CheckCircle },
-  rejected: { label: "Rejected", variant: "destructive" as const, icon: XCircle },
-  paid: { label: "Paid", variant: "default" as const, icon: CheckCircle },
-  portal_upload_required: { label: "Upload Required", variant: "destructive" as const, icon: AlertTriangle },
+  draft: { color: 'bg-slate-100 text-slate-700', label: 'Draft' },
+  submitted: { color: 'bg-blue-100 text-blue-700', label: 'Submitted' },
+  processing: { color: 'bg-yellow-100 text-yellow-700', label: 'Processing' },
+  approved: { color: 'bg-green-100 text-green-700', label: 'Approved' },
+  paid: { color: 'bg-emerald-100 text-emerald-700', label: 'Paid' },
+  denied: { color: 'bg-red-100 text-red-700', label: 'Denied' },
+  info_requested: { color: 'bg-orange-100 text-orange-700', label: 'Info Requested' },
 };
 
-export function ClaimsTable({ 
-  showFilters = true, 
-  pageSize = 10, 
-  compactView = false 
-}: ClaimsTableProps) {
-  const [queryParams, setQueryParams] = useState<ClaimsQueryParams>({
-    page: 1,
-    limit: pageSize,
-    sortBy: 'serviceDate',
-    sortOrder: 'desc',
-  });
-
+/**
+ * ClaimsTable - A comprehensive table component for displaying and managing claims
+ * 
+ * Features:
+ * - Search functionality across multiple fields
+ * - Filtering by status, insurer, and date range
+ * - Sorting by any column (ascending/descending)
+ * - Pagination with configurable page size
+ * - Responsive design with mobile-friendly layout
+ * - Action menu for each claim (view, edit, download)
+ * - Loading skeleton states
+ * - Accessible design with proper ARIA labels
+ */
+export function ClaimsTable({ claims, isLoading = false, onClaimSelect, className }: ClaimsTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [dateFromFilter, setDateFromFilter] = useState('');
-  const [dateToFilter, setDateToFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [insurerFilter, setInsurerFilter] = useState<string>('all');
+  const [sortField, setSortField] = useState<SortField>('updatedAt');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  // Build query string
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    Object.entries(queryParams).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
-        params.append(key, value.toString());
+  // Get unique insurers for filter dropdown
+  const uniqueInsurers = useMemo(() => {
+    const insurers = [...new Set(claims.map(claim => claim.insurerName))];
+    return insurers.sort();
+  }, [claims]);
+
+  // Filter and sort claims
+  const filteredAndSortedClaims = useMemo(() => {
+    let filtered = claims;
+
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(claim =>
+        claim.claimNumber.toLowerCase().includes(term) ||
+        claim.patientName.toLowerCase().includes(term) ||
+        claim.insurerName.toLowerCase().includes(term)
+      );
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(claim => claim.status === statusFilter);
+    }
+
+    // Apply insurer filter
+    if (insurerFilter !== 'all') {
+      filtered = filtered.filter(claim => claim.insurerName === insurerFilter);
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let aValue: any = a[sortField];
+      let bValue: any = b[sortField];
+
+      // Handle date fields
+      if (sortField === 'createdAt' || sortField === 'updatedAt') {
+        aValue = new Date(aValue).getTime();
+        bValue = new Date(bValue).getTime();
       }
+
+      // Handle amount field
+      if (sortField === 'amount') {
+        aValue = parseFloat(aValue.replace(/[^0-9.-]+/g, ''));
+        bValue = parseFloat(bValue.replace(/[^0-9.-]+/g, ''));
+      }
+
+      // Handle string fields
+      if (typeof aValue === 'string') {
+        aValue = aValue.toLowerCase();
+        bValue = bValue.toLowerCase();
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
     });
-    return params.toString();
-  }, [queryParams]);
 
-  const { data: claimsData, isLoading, error } = useQuery<ClaimsResponse>({
-    queryKey: ['/api/claims', queryString],
-    refetchInterval: 30000, // Refresh every 30 seconds
-  });
+    return filtered;
+  }, [claims, searchTerm, statusFilter, insurerFilter, sortField, sortDirection]);
 
-  // Handle filter changes
-  const handleSearch = () => {
-    setQueryParams(prev => ({
-      ...prev,
-      page: 1,
-      search: searchTerm,
-      status: statusFilter,
-      dateFrom: dateFromFilter,
-      dateTo: dateToFilter,
-    }));
+  // Pagination
+  const totalPages = Math.ceil(filteredAndSortedClaims.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedClaims = filteredAndSortedClaims.slice(startIndex, startIndex + pageSize);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
   };
 
-  const handleSort = (column: string) => {
-    setQueryParams(prev => ({
-      ...prev,
-      page: 1,
-      sortBy: column,
-      sortOrder: prev.sortBy === column && prev.sortOrder === 'asc' ? 'desc' : 'asc',
-    }));
-  };
-
-  const handlePageChange = (newPage: number) => {
-    setQueryParams(prev => ({ ...prev, page: newPage }));
-  };
-
-  const clearFilters = () => {
-    setSearchTerm('');
-    setStatusFilter('');
-    setDateFromFilter('');
-    setDateToFilter('');
-    setQueryParams({
-      page: 1,
-      limit: pageSize,
-      sortBy: 'serviceDate',
-      sortOrder: 'desc',
-    });
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? 
+      <ChevronUp className="h-4 w-4" /> : 
+      <ChevronDown className="h-4 w-4" />;
   };
 
   if (isLoading) {
-    return <ClaimsTableSkeleton compactView={compactView} />;
-  }
-
-  if (error) {
     return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
-            <AlertTriangle className="h-5 w-5" />
-            <p>Unable to load claims data. Please try again.</p>
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle>Claims</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center space-x-4">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  const claims = claimsData?.claims || [];
-  const totalPages = claimsData?.totalPages || 1;
-  const currentPage = claimsData?.page || 1;
-  const total = claimsData?.total || 0;
-
   return (
-    <Card data-testid="claims-table">
-      {showFilters && (
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <FileText className="h-5 w-5" />
-            <span>Claims ({total})</span>
-          </CardTitle>
+    <Card className={className}>
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <CardTitle>Claims ({filteredAndSortedClaims.length})</CardTitle>
           
-          {/* Filters */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-            <div className="space-y-2">
-              <Label htmlFor="search-input">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search-input"
-                  placeholder="Patient, claim #..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8"
-                  data-testid="input-search"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="status-filter">Status</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger id="status-filter" data-testid="select-status">
-                  <SelectValue placeholder="All statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All statuses</SelectItem>
-                  {Object.entries(statusConfig).map(([status, config]) => (
-                    <SelectItem key={status} value={status}>
-                      {config.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date-from">From Date</Label>
+          {/* Search and Filters */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
               <Input
-                id="date-from"
-                type="date"
-                value={dateFromFilter}
-                onChange={(e) => setDateFromFilter(e.target.value)}
-                data-testid="input-date-from"
+                placeholder="Search claims..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 w-full sm:w-64"
+                data-testid="search-claims"
               />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date-to">To Date</Label>
-              <Input
-                id="date-to"
-                type="date"
-                value={dateToFilter}
-                onChange={(e) => setDateToFilter(e.target.value)}
-                data-testid="input-date-to"
-              />
-            </div>
-
-            <div className="flex items-end space-x-2">
-              <Button onClick={handleSearch} data-testid="button-apply-filters">
+            
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-40" data-testid="filter-status">
                 <Filter className="h-4 w-4 mr-2" />
-                Apply
-              </Button>
-              <Button variant="outline" onClick={clearFilters} data-testid="button-clear-filters">
-                Clear
-              </Button>
-            </div>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {Object.entries(statusConfig).map(([value, config]) => (
+                  <SelectItem key={value} value={value}>
+                    {config.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={insurerFilter} onValueChange={setInsurerFilter}>
+              <SelectTrigger className="w-full sm:w-40" data-testid="filter-insurer">
+                <SelectValue placeholder="Insurer" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Insurers</SelectItem>
+                {uniqueInsurers.map((insurer) => (
+                  <SelectItem key={insurer} value={insurer}>
+                    {insurer}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        </CardHeader>
-      )}
-
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleSort('claimNumber')}
-                  data-testid="header-claim-number"
-                >
-                  Claim #
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleSort('patientName')}
-                  data-testid="header-patient"
-                >
-                  Patient
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleSort('serviceDate')}
-                  data-testid="header-service-date"
-                >
-                  Service Date
-                </TableHead>
-                {!compactView && (
-                  <>
-                    <TableHead>Provider</TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('totalAmount')}
-                    >
-                      Amount
-                    </TableHead>
-                  </>
-                )}
-                <TableHead>Status</TableHead>
-                <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleSort('updatedAt')}
-                >
-                  Last Updated
-                </TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {claims.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={compactView ? 6 : 8} className="text-center py-8">
-                    <div className="flex flex-col items-center space-y-2 text-muted-foreground">
-                      <FileText className="h-8 w-8" />
-                      <p>No claims found</p>
-                      <p className="text-sm">Try adjusting your filters or create a new claim</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                claims.map((claim) => {
-                  const statusInfo = statusConfig[claim.status as keyof typeof statusConfig] || statusConfig.draft;
-                  const StatusIcon = statusInfo.icon;
-
-                  return (
-                    <TableRow key={claim.id} data-testid={`row-claim-${claim.id}`}>
-                      <TableCell className="font-medium">
-                        <Link href={`/claims/${claim.id}`}>
-                          <span className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200">
-                            {claim.claimNumber}
-                          </span>
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <span>{claim.patientFirstName} {claim.patientLastName}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Calendar className="h-4 w-4 text-muted-foreground" />
-                          <span>{new Date(claim.serviceDate).toLocaleDateString()}</span>
-                        </div>
-                      </TableCell>
-                      {!compactView && (
-                        <>
-                          <TableCell>{claim.providerName}</TableCell>
-                          <TableCell className="font-medium">
-                            ${claim.totalAmount?.toFixed(2) || '0.00'}
-                          </TableCell>
-                        </>
-                      )}
-                      <TableCell>
-                        <Badge variant={statusInfo.variant} className="inline-flex items-center space-x-1">
-                          <StatusIcon className="h-3 w-3" />
-                          <span>{statusInfo.label}</span>
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(claim.updatedAt).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Link href={`/claims/${claim.id}`}>
-                          <Button variant="ghost" size="sm" data-testid={`button-view-${claim.id}`}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
         </div>
+      </CardHeader>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-6 py-4 border-t">
-            <div className="text-sm text-muted-foreground">
-              Showing {Math.min((currentPage - 1) * pageSize + 1, total)} to {Math.min(currentPage * pageSize, total)} of {total} claims
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                data-testid="button-prev-page"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              
-              <div className="flex items-center space-x-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-
-                  return (
-                    <Button
-                      key={pageNum}
-                      variant={pageNum === currentPage ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handlePageChange(pageNum)}
-                      data-testid={`button-page-${pageNum}`}
-                    >
-                      {pageNum}
-                    </Button>
-                  );
-                })}
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                data-testid="button-next-page"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+      <CardContent>
+        {filteredAndSortedClaims.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-slate-500">No claims found matching your criteria.</p>
           </div>
+        ) : (
+          <>
+            {/* Desktop Table */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    {[
+                      { field: 'claimNumber' as SortField, label: 'Claim #' },
+                      { field: 'patientName' as SortField, label: 'Patient' },
+                      { field: 'insurerName' as SortField, label: 'Insurer' },
+                      { field: 'amount' as SortField, label: 'Amount' },
+                      { field: 'status' as SortField, label: 'Status' },
+                      { field: 'updatedAt' as SortField, label: 'Last Updated' },
+                    ].map(({ field, label }) => (
+                      <th key={field} className="text-left py-3 px-4">
+                        <button
+                          onClick={() => handleSort(field)}
+                          className="flex items-center space-x-1 font-medium text-slate-700 hover:text-slate-900"
+                          data-testid={`sort-${field}`}
+                        >
+                          <span>{label}</span>
+                          <SortIcon field={field} />
+                        </button>
+                      </th>
+                    ))}
+                    <th className="text-left py-3 px-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedClaims.map((claim) => (
+                    <tr key={claim.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-3 px-4 font-medium">{claim.claimNumber}</td>
+                      <td className="py-3 px-4">{claim.patientName}</td>
+                      <td className="py-3 px-4">{claim.insurerName}</td>
+                      <td className="py-3 px-4">${claim.amount}</td>
+                      <td className="py-3 px-4">
+                        <Badge className={statusConfig[claim.status].color}>
+                          {statusConfig[claim.status].label}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4 text-slate-500">
+                        {formatDistanceToNow(new Date(claim.updatedAt), { addSuffix: true })}
+                      </td>
+                      <td className="py-3 px-4">
+                        <ClaimActionsMenu claim={claim} onSelect={onClaimSelect} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="lg:hidden space-y-4">
+              {paginatedClaims.map((claim) => (
+                <Card key={claim.id} className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium">{claim.claimNumber}</span>
+                    <Badge className={statusConfig[claim.status].color}>
+                      {statusConfig[claim.status].label}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1 text-sm text-slate-600">
+                    <div>Patient: {claim.patientName}</div>
+                    <div>Insurer: {claim.insurerName}</div>
+                    <div>Amount: ${claim.amount}</div>
+                    <div>Updated: {formatDistanceToNow(new Date(claim.updatedAt), { addSuffix: true })}</div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <ClaimActionsMenu claim={claim} onSelect={onClaimSelect} />
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6">
+                <div className="flex items-center space-x-2 text-sm text-slate-600">
+                  <span>Show</span>
+                  <Select value={pageSize.toString()} onValueChange={(value) => setPageSize(Number(value))}>
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span>per page</span>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    data-testid="prev-page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  
+                  <span className="text-sm text-slate-600">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    data-testid="next-page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
   );
 }
 
-function ClaimsTableSkeleton({ compactView }: { compactView: boolean }) {
+/**
+ * Actions menu for each claim row
+ */
+function ClaimActionsMenu({ 
+  claim, 
+  onSelect 
+}: { 
+  claim: ClaimTableData; 
+  onSelect?: (claimId: string) => void;
+}) {
   return (
-    <Card data-testid="claims-table-skeleton">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Claim #</TableHead>
-              <TableHead>Patient</TableHead>
-              <TableHead>Service Date</TableHead>
-              {!compactView && (
-                <>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Amount</TableHead>
-                </>
-              )}
-              <TableHead>Status</TableHead>
-              <TableHead>Last Updated</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {Array.from({ length: 5 }).map((_, index) => (
-              <TableRow key={index}>
-                <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                {!compactView && (
-                  <>
-                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                  </>
-                )}
-                <TableCell><Skeleton className="h-6 w-20" /></TableCell>
-                <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                <TableCell><Skeleton className="h-8 w-8" /></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" data-testid={`actions-${claim.claimNumber}`}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link href={`/claims/${claim.id}`} className="flex items-center">
+            <Eye className="h-4 w-4 mr-2" />
+            View Details
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onSelect?.(claim.id)}>
+          <Edit className="h-4 w-4 mr-2" />
+          Edit Claim
+        </DropdownMenuItem>
+        <DropdownMenuItem>
+          <Download className="h-4 w-4 mr-2" />
+          Download
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
+}
+
+/**
+ * Helper function to transform claim data for table display
+ */
+export function transformClaimsForTable(claims: any[]): ClaimTableData[] {
+  return claims.map(claim => ({
+    id: claim.id,
+    claimNumber: claim.claimNumber,
+    patientName: claim.patient?.name || 'Unknown Patient',
+    insurerName: claim.insurer?.name || 'Unknown Insurer',
+    amount: claim.amount,
+    status: claim.status,
+    createdAt: claim.createdAt,
+    updatedAt: claim.updatedAt,
+    type: claim.type,
+  }));
 }

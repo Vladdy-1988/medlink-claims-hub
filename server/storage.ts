@@ -60,6 +60,7 @@ export interface IStorage {
   getClaim(id: string): Promise<Claim | undefined>;
   createClaim(claim: InsertClaim): Promise<Claim>;
   updateClaim(id: string, updates: Partial<Claim>): Promise<Claim | undefined>;
+  updateClaimStatus(id: string, status: string): Promise<void>;
   
   // Attachment operations
   getAttachments(claimId: string): Promise<Attachment[]>;
@@ -289,6 +290,16 @@ export class DatabaseStorage implements IStorage {
       successRate,
       monthlyRevenue,
     };
+  }
+
+  async updateClaimStatus(id: string, status: string): Promise<void> {
+    await db
+      .update(claims)
+      .set({ 
+        status,
+        updatedAt: new Date(),
+      })
+      .where(eq(claims.id, id));
   }
 }
 

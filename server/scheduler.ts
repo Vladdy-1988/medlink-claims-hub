@@ -2,300 +2,320 @@ import { telusEClaimsService } from './integrations/telusEclaims';
 import { cdanetService } from './integrations/cdanet';
 import { portalService } from './integrations/portal';
 import { storage } from './storage';
+import { auditLogger } from './auditLogger';
 
 /**
- * Simple in-process scheduler for polling claim status updates
+ * In-Process Scheduler for Claims Status Polling
  * 
- * This scheduler runs periodic tasks to check claim status with
- * insurance carriers and update local records accordingly.
+ * This scheduler runs within the main application process and handles
+ * periodic polling of claim statuses from various insurance systems.
+ * 
+ * In production, this should be replaced with a proper job queue system
+ * like Bull, Agenda, or moved to a separate worker process.
  */
 
-interface ScheduledJob {
+export interface ScheduledJob {
   id: string;
-  interval: number; // milliseconds
-  lastRun?: Date;
-  nextRun: Date;
-  isRunning: boolean;
-  handler: () => Promise<void>;
+  type: 'poll_status' | 'retry_submission';
+  claimId: string;
+  submissionId: string;
+  rail: 'telusEclaims' | 'cdanet' | 'portal';
+  nextRunAt: Date;
+  attempts: number;
+  maxAttempts: number;
+  lastError?: string;
 }
 
-export class Scheduler {
+export class ClaimsScheduler {
   private jobs: Map<string, ScheduledJob> = new Map();
-  private timers: Map<string, NodeJS.Timeout> = new Map();
-  private isStarted = false;
+  private intervalId: NodeJS.Timeout | null = null;
+  private isRunning = false;
 
-  constructor() {
-    this.setupJobs();
-  }
-
-  /**
-   * Setup default scheduled jobs
-   */
-  private setupJobs() {
-    // Poll Telus eClaims status every 5 minutes
-    this.addJob('telus-status-poll', 5 * 60 * 1000, async () => {
-      await this.pollTelusClaimsStatus();
-    });
-
-    // Poll CDAnet status every 10 minutes
-    this.addJob('cdanet-status-poll', 10 * 60 * 1000, async () => {
-      await this.pollCDAnetStatus();
-    });
-
-    // Poll portal submissions every 15 minutes
-    this.addJob('portal-status-poll', 15 * 60 * 1000, async () => {
-      await this.pollPortalStatus();
-    });
-
-    // Audit log cleanup - daily at 2 AM
-    this.addJob('audit-cleanup', 24 * 60 * 60 * 1000, async () => {
-      await this.cleanupAuditLogs();
-    });
-  }
-
-  /**
-   * Add a scheduled job
-   */
-  addJob(id: string, intervalMs: number, handler: () => Promise<void>) {
-    const job: ScheduledJob = {
-      id,
-      interval: intervalMs,
-      nextRun: new Date(Date.now() + intervalMs),
-      isRunning: false,
-      handler,
-    };
-
-    this.jobs.set(id, job);
-    
-    if (this.isStarted) {
-      this.scheduleJob(job);
-    }
+  constructor(private pollIntervalMs: number = 5 * 60 * 1000) { // 5 minutes default
+    console.log('[Scheduler] Claims scheduler initialized');
   }
 
   /**
    * Start the scheduler
    */
-  start() {
-    if (this.isStarted) {
-      console.log('[Scheduler] Already started');
+  start(): void {
+    if (this.isRunning) {
+      console.log('[Scheduler] Already running');
       return;
     }
 
-    console.log('[Scheduler] Starting scheduler...');
-    this.isStarted = true;
-
-    // Schedule all jobs
-    for (const job of this.jobs.values()) {
-      this.scheduleJob(job);
-    }
-
-    console.log(`[Scheduler] Started with ${this.jobs.size} jobs`);
+    console.log('[Scheduler] Starting claims status polling');
+    this.isRunning = true;
+    
+    // Run immediately on start
+    this.processPendingJobs();
+    
+    // Schedule periodic runs
+    this.intervalId = setInterval(() => {
+      this.processPendingJobs();
+    }, this.pollIntervalMs);
   }
 
   /**
    * Stop the scheduler
    */
-  stop() {
-    if (!this.isStarted) {
+  stop(): void {
+    if (!this.isRunning) {
       return;
     }
 
-    console.log('[Scheduler] Stopping scheduler...');
-    this.isStarted = false;
-
-    // Clear all timers
-    for (const timer of this.timers.values()) {
-      clearTimeout(timer);
-    }
-    this.timers.clear();
-
-    console.log('[Scheduler] Stopped');
-  }
-
-  /**
-   * Schedule a single job
-   */
-  private scheduleJob(job: ScheduledJob) {
-    const timeUntilNext = job.nextRun.getTime() - Date.now();
-    const delay = Math.max(0, timeUntilNext);
-
-    const timer = setTimeout(async () => {
-      await this.runJob(job);
-    }, delay);
-
-    this.timers.set(job.id, timer);
-  }
-
-  /**
-   * Run a scheduled job
-   */
-  private async runJob(job: ScheduledJob) {
-    if (job.isRunning) {
-      console.log(`[Scheduler] Job ${job.id} is already running, skipping`);
-      return;
-    }
-
-    console.log(`[Scheduler] Running job: ${job.id}`);
-    job.isRunning = true;
-    job.lastRun = new Date();
-
-    try {
-      await job.handler();
-      console.log(`[Scheduler] Job ${job.id} completed successfully`);
-    } catch (error) {
-      console.error(`[Scheduler] Job ${job.id} failed:`, error);
-    } finally {
-      job.isRunning = false;
-      
-      // Schedule next run
-      job.nextRun = new Date(Date.now() + job.interval);
-      if (this.isStarted) {
-        this.scheduleJob(job);
-      }
+    console.log('[Scheduler] Stopping claims status polling');
+    this.isRunning = false;
+    
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
     }
   }
 
   /**
-   * Poll Telus eClaims for status updates
+   * Schedule a claim for status polling
    */
-  private async pollTelusClaimsStatus() {
-    try {
-      // Get all claims with Telus submissions that are still processing
-      const pendingClaims = await storage.getClaimsByStatus(['submitted', 'processing']);
-      
-      for (const claim of pendingClaims) {
-        if (claim.submissionId && claim.submissionId.startsWith('TEL-')) {
-          try {
-            const statusResponse = await telusEClaimsService.pollStatus(claim.submissionId);
-            
-            // Update claim status if changed
-            if (statusResponse.status !== claim.status) {
-              await storage.updateClaim(claim.id, {
-                status: statusResponse.status,
-                updatedAt: new Date(),
-                paymentAmount: statusResponse.amountPaid,
-                approvedAmount: statusResponse.amountApproved,
-                processedDate: statusResponse.processedDate ? new Date(statusResponse.processedDate) : undefined,
-                notes: statusResponse.rejectionReason || claim.notes,
-              });
+  scheduleStatusPoll(claimId: string, submissionId: string, rail: 'telusEclaims' | 'cdanet' | 'portal'): void {
+    const jobId = `poll_${submissionId}`;
+    const nextRunAt = new Date(Date.now() + this.pollIntervalMs);
 
-              console.log(`[Scheduler] Updated Telus claim ${claim.id} status: ${statusResponse.status}`);
-            }
-          } catch (error) {
-            console.error(`[Scheduler] Failed to poll Telus status for claim ${claim.id}:`, error);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[Scheduler] Error polling Telus eClaims status:', error);
-    }
-  }
-
-  /**
-   * Poll CDAnet for status updates
-   */
-  private async pollCDAnetStatus() {
-    try {
-      // Get all claims with CDAnet submissions that are still processing
-      const pendingClaims = await storage.getClaimsByStatus(['submitted', 'processing']);
-      
-      for (const claim of pendingClaims) {
-        if (claim.submissionId && claim.submissionId.startsWith('CDA-')) {
-          try {
-            const statusResponse = await cdanetService.pollStatus(claim.submissionId);
-            
-            // Update claim status if changed
-            if (statusResponse.status !== claim.status) {
-              await storage.updateClaim(claim.id, {
-                status: statusResponse.status,
-                updatedAt: new Date(),
-                paymentAmount: statusResponse.payableAmount,
-                approvedAmount: statusResponse.payableAmount,
-                processedDate: statusResponse.processedDate ? new Date(statusResponse.processedDate) : undefined,
-                notes: statusResponse.rejectionReason || statusResponse.explanationOfBenefits?.join('; ') || claim.notes,
-              });
-
-              console.log(`[Scheduler] Updated CDAnet claim ${claim.id} status: ${statusResponse.status}`);
-            }
-          } catch (error) {
-            console.error(`[Scheduler] Failed to poll CDAnet status for claim ${claim.id}:`, error);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[Scheduler] Error polling CDAnet status:', error);
-    }
-  }
-
-  /**
-   * Poll portal submission status
-   */
-  private async pollPortalStatus() {
-    try {
-      // Get all claims with portal submissions
-      const pendingClaims = await storage.getClaimsByStatus(['portal_upload_required', 'submitted', 'processing']);
-      
-      for (const claim of pendingClaims) {
-        if (claim.submissionId && claim.submissionId.startsWith('POR-')) {
-          try {
-            const statusResponse = await portalService.pollStatus(claim.submissionId);
-            
-            // Update claim status if changed
-            if (statusResponse.status !== claim.status) {
-              await storage.updateClaim(claim.id, {
-                status: statusResponse.status,
-                updatedAt: new Date(),
-                processedDate: statusResponse.submittedDate ? new Date(statusResponse.submittedDate) : undefined,
-                notes: statusResponse.notes || claim.notes,
-              });
-
-              console.log(`[Scheduler] Updated portal claim ${claim.id} status: ${statusResponse.status}`);
-            }
-          } catch (error) {
-            console.error(`[Scheduler] Failed to poll portal status for claim ${claim.id}:`, error);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[Scheduler] Error polling portal status:', error);
-    }
-  }
-
-  /**
-   * Clean up old audit logs
-   */
-  private async cleanupAuditLogs() {
-    try {
-      const retentionDays = 90; // Keep logs for 90 days
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-
-      // TODO: Implement audit log cleanup
-      // await storage.deleteAuditLogsBefore(cutoffDate);
-      
-      console.log(`[Scheduler] Audit log cleanup completed (cutoff: ${cutoffDate.toISOString()})`);
-    } catch (error) {
-      console.error('[Scheduler] Error cleaning up audit logs:', error);
-    }
-  }
-
-  /**
-   * Get scheduler status
-   */
-  getStatus() {
-    return {
-      isStarted: this.isStarted,
-      totalJobs: this.jobs.size,
-      jobs: Array.from(this.jobs.values()).map(job => ({
-        id: job.id,
-        interval: job.interval,
-        lastRun: job.lastRun,
-        nextRun: job.nextRun,
-        isRunning: job.isRunning,
-      })),
+    const job: ScheduledJob = {
+      id: jobId,
+      type: 'poll_status',
+      claimId,
+      submissionId,
+      rail,
+      nextRunAt,
+      attempts: 0,
+      maxAttempts: 10, // Stop polling after 10 attempts (about 50 minutes)
     };
+
+    this.jobs.set(jobId, job);
+    console.log(`[Scheduler] Scheduled status polling for ${submissionId} (${rail}) at ${nextRunAt.toISOString()}`);
+  }
+
+  /**
+   * Process all pending jobs
+   */
+  private async processPendingJobs(): Promise<void> {
+    const now = new Date();
+    const pendingJobs = Array.from(this.jobs.values())
+      .filter(job => job.nextRunAt <= now);
+
+    if (pendingJobs.length === 0) {
+      return;
+    }
+
+    console.log(`[Scheduler] Processing ${pendingJobs.length} pending jobs`);
+
+    for (const job of pendingJobs) {
+      try {
+        await this.processJob(job);
+      } catch (error) {
+        console.error(`[Scheduler] Error processing job ${job.id}:`, error);
+        this.handleJobError(job, error as Error);
+      }
+    }
+  }
+
+  /**
+   * Process a single job
+   */
+  private async processJob(job: ScheduledJob): Promise<void> {
+    console.log(`[Scheduler] Processing job ${job.id} (attempt ${job.attempts + 1})`);
+
+    job.attempts++;
+
+    try {
+      if (job.type === 'poll_status') {
+        await this.pollClaimStatus(job);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Poll status for a specific claim
+   */
+  private async pollClaimStatus(job: ScheduledJob): Promise<void> {
+    let statusResponse: any;
+    let shouldContinuePolling = true;
+
+    // Poll the appropriate service based on rail
+    switch (job.rail) {
+      case 'telusEclaims':
+        statusResponse = await telusEClaimsService.pollStatus(job.submissionId);
+        shouldContinuePolling = !['paid', 'rejected', 'error'].includes(statusResponse.status);
+        break;
+
+      case 'cdanet':
+        statusResponse = await cdanetService.pollStatus(job.submissionId);
+        shouldContinuePolling = !['paid', 'rejected', 'error'].includes(statusResponse.status);
+        break;
+
+      case 'portal':
+        statusResponse = await portalService.pollStatus(job.submissionId);
+        shouldContinuePolling = !['paid', 'rejected'].includes(statusResponse.status);
+        break;
+
+      default:
+        throw new Error(`Unknown rail: ${job.rail}`);
+    }
+
+    // Update claim status in database
+    await this.updateClaimStatus(job.claimId, statusResponse, job.rail);
+
+    // Log the status check
+    await auditLogger.log({
+      orgId: '', // Will be filled by the audit logger
+      actorUserId: 'system',
+      type: 'claim_status_polled',
+      details: {
+        claimId: job.claimId,
+        submissionId: job.submissionId,
+        rail: job.rail,
+        status: statusResponse.status,
+        attempt: job.attempts,
+      },
+      ip: '127.0.0.1',
+      userAgent: 'Claims Scheduler',
+    });
+
+    if (shouldContinuePolling && job.attempts < job.maxAttempts) {
+      // Reschedule for next poll
+      job.nextRunAt = new Date(Date.now() + this.pollIntervalMs);
+      console.log(`[Scheduler] Rescheduled ${job.id} for ${job.nextRunAt.toISOString()}`);
+    } else {
+      // Remove completed or failed job
+      this.jobs.delete(job.id);
+      const reason = shouldContinuePolling ? 'max attempts reached' : 'final status received';
+      console.log(`[Scheduler] Removed job ${job.id} - ${reason}`);
+    }
+  }
+
+  /**
+   * Update claim status in database based on polling response
+   */
+  private async updateClaimStatus(claimId: string, statusResponse: any, rail: string): Promise<void> {
+    try {
+      // Map external status to internal status
+      let internalStatus = 'submitted';
+      
+      switch (statusResponse.status) {
+        case 'processing':
+          internalStatus = 'submitted';
+          break;
+        case 'approved':
+          internalStatus = 'approved';
+          break;
+        case 'paid':
+          internalStatus = 'paid';
+          break;
+        case 'rejected':
+        case 'denied':
+          internalStatus = 'denied';
+          break;
+        case 'error':
+          internalStatus = 'error';
+          break;
+      }
+
+      // Update claim status
+      await storage.updateClaimStatus(claimId, internalStatus);
+
+      // Create remittance record if payment information is available
+      if (statusResponse.amountPaid || statusResponse.payableAmount) {
+        const amount = statusResponse.amountPaid || statusResponse.payableAmount;
+        await storage.createRemittance({
+          insurerId: '', // Will be filled from claim
+          claimId,
+          status: statusResponse.status,
+          amountPaid: amount.toString(),
+          raw: statusResponse,
+        });
+      }
+
+      console.log(`[Scheduler] Updated claim ${claimId} status to ${internalStatus}`);
+    } catch (error) {
+      console.error(`[Scheduler] Failed to update claim ${claimId} status:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Handle job processing errors
+   */
+  private handleJobError(job: ScheduledJob, error: Error): void {
+    job.lastError = error.message;
+
+    if (job.attempts < job.maxAttempts) {
+      // Exponential backoff: 2^attempts * base interval (capped at 1 hour)
+      const backoffMs = Math.min(
+        Math.pow(2, job.attempts) * this.pollIntervalMs,
+        60 * 60 * 1000 // 1 hour max
+      );
+      job.nextRunAt = new Date(Date.now() + backoffMs);
+      console.log(`[Scheduler] Job ${job.id} failed, retrying in ${backoffMs}ms (attempt ${job.attempts})`);
+    } else {
+      // Remove failed job after max attempts
+      this.jobs.delete(job.id);
+      console.error(`[Scheduler] Job ${job.id} failed permanently after ${job.attempts} attempts: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get current job statistics
+   */
+  getStats(): {
+    totalJobs: number;
+    pendingJobs: number;
+    runningJobs: number;
+    failedJobs: number;
+  } {
+    const now = new Date();
+    const jobs = Array.from(this.jobs.values());
+
+    return {
+      totalJobs: jobs.length,
+      pendingJobs: jobs.filter(job => job.nextRunAt <= now).length,
+      runningJobs: jobs.filter(job => job.attempts > 0 && job.nextRunAt > now).length,
+      failedJobs: jobs.filter(job => job.lastError).length,
+    };
+  }
+
+  /**
+   * Get all scheduled jobs (for debugging)
+   */
+  getJobs(): ScheduledJob[] {
+    return Array.from(this.jobs.values());
+  }
+
+  /**
+   * Clear all jobs (for testing)
+   */
+  clearJobs(): void {
+    this.jobs.clear();
+    console.log('[Scheduler] All jobs cleared');
   }
 }
 
 // Export singleton instance
-export const scheduler = new Scheduler();
+export const claimsScheduler = new ClaimsScheduler();
+
+// Auto-start scheduler when module loads
+if (process.env.NODE_ENV !== 'test') {
+  claimsScheduler.start();
+  
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('[Scheduler] Received SIGTERM, stopping scheduler...');
+    claimsScheduler.stop();
+  });
+  
+  process.on('SIGINT', () => {
+    console.log('[Scheduler] Received SIGINT, stopping scheduler...');
+    claimsScheduler.stop();
+  });
+}

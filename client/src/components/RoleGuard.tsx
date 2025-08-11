@@ -1,242 +1,127 @@
-import { ReactNode } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Shield, 
-  AlertTriangle, 
-  Lock, 
-  User, 
-  UserCheck, 
-  Crown,
-  ArrowLeft
-} from "lucide-react";
-import { Link } from "wouter";
-
-export type UserRole = 'provider' | 'billing' | 'admin';
+import { Card, CardContent } from "@/components/ui/card";
+import { Lock, AlertTriangle } from "lucide-react";
 
 interface RoleGuardProps {
-  allowedRoles: UserRole[];
-  children: ReactNode;
-  fallback?: ReactNode;
-  showAccessDenied?: boolean;
-  redirectTo?: string;
+  allowedRoles: string[];
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+  requireAll?: boolean; // If true, user must have ALL roles; if false, user needs ANY role
 }
 
-interface User {
-  id: string;
-  role: UserRole;
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-}
-
-const roleConfig = {
-  provider: {
-    label: 'Provider',
-    icon: User,
-    color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    description: 'Healthcare provider with claim submission access',
-  },
-  billing: {
-    label: 'Billing Staff',
-    icon: UserCheck,
-    color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-    description: 'Billing staff with full claims management access',
-  },
-  admin: {
-    label: 'Administrator',
-    icon: Crown,
-    color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-    description: 'Full administrative access to all features',
-  },
-};
-
+/**
+ * RoleGuard - Protects components and routes based on user roles
+ * 
+ * Features:
+ * - Role-based access control (RBAC)
+ * - Support for multiple role requirements
+ * - Customizable fallback content
+ * - Loading state handling
+ * - Accessible error states
+ */
 export function RoleGuard({ 
   allowedRoles, 
   children, 
   fallback,
-  showAccessDenied = true,
-  redirectTo = '/'
+  requireAll = false 
 }: RoleGuardProps) {
   const { user, isLoading, isAuthenticated } = useAuth();
 
-  // Show loading state
+  // Show loading state while checking authentication
   if (isLoading) {
     return (
-      <Card data-testid="role-guard-loading">
-        <CardContent className="p-6">
-          <div className="flex items-center space-x-2">
-            <Shield className="h-5 w-5 animate-pulse text-muted-foreground" />
-            <p>Checking access permissions...</p>
+      <Card className="max-w-md mx-auto mt-8">
+        <CardContent className="p-6 text-center">
+          <div className="animate-pulse">
+            <div className="h-4 bg-slate-200 rounded w-3/4 mx-auto"></div>
+            <div className="h-4 bg-slate-200 rounded w-1/2 mx-auto mt-2"></div>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  // Not authenticated
+  // Redirect to login if not authenticated
   if (!isAuthenticated || !user) {
+    if (fallback) {
+      return <>{fallback}</>;
+    }
+
     return (
-      <Card data-testid="role-guard-unauthenticated">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Lock className="h-5 w-5 text-red-600" />
-            <span>Authentication Required</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground mb-4">
-            You must be logged in to access this content.
+      <Card className="max-w-md mx-auto mt-8" data-testid="auth-required">
+        <CardContent className="p-6 text-center">
+          <Lock className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
+            Authentication Required
+          </h2>
+          <p className="text-slate-600 mb-4">
+            You need to be logged in to access this content.
           </p>
-          <Button asChild>
-            <Link href="/api/login">
-              <User className="h-4 w-4 mr-2" />
-              Sign In
-            </Link>
-          </Button>
+          <a 
+            href="/api/login"
+            className="inline-flex items-center justify-center rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          >
+            Sign In
+          </a>
         </CardContent>
       </Card>
     );
   }
 
-  const typedUser = user as User;
-  const hasRequiredRole = allowedRoles.includes(typedUser.role);
+  // Check role permissions
+  const userRole = user.role;
+  const hasPermission = requireAll 
+    ? allowedRoles.every(role => userRole === role || (userRole === 'admin' && role !== 'admin'))
+    : allowedRoles.some(role => userRole === role || userRole === 'admin');
 
-  // Has required role - show content
-  if (hasRequiredRole) {
-    return <>{children}</>;
-  }
+  // Show access denied if user doesn't have required roles
+  if (!hasPermission) {
+    if (fallback) {
+      return <>{fallback}</>;
+    }
 
-  // Custom fallback provided
-  if (fallback) {
-    return <>{fallback}</>;
-  }
-
-  // Default access denied UI
-  if (showAccessDenied) {
-    return <AccessDeniedCard user={typedUser} allowedRoles={allowedRoles} redirectTo={redirectTo} />;
-  }
-
-  // No fallback - render nothing
-  return null;
-}
-
-interface AccessDeniedCardProps {
-  user: User;
-  allowedRoles: UserRole[];
-  redirectTo: string;
-}
-
-function AccessDeniedCard({ user, allowedRoles, redirectTo }: AccessDeniedCardProps) {
-  const userRoleConfig = roleConfig[user.role];
-  const UserRoleIcon = userRoleConfig.icon;
-
-  return (
-    <Card className="max-w-2xl mx-auto" data-testid="role-guard-access-denied">
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <AlertTriangle className="h-6 w-6 text-red-600" />
-          <span>Access Denied</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Current User Role */}
-        <div className="p-4 rounded-lg bg-muted">
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-background">
-              <UserRoleIcon className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-medium">
-                {user.firstName} {user.lastName}
-              </p>
-              <div className="flex items-center space-x-2">
-                <Badge className={userRoleConfig.color}>
-                  {userRoleConfig.label}
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  {user.email}
-                </span>
-              </div>
-            </div>
-          </div>
-          <p className="text-sm text-muted-foreground mt-2">
-            {userRoleConfig.description}
+    return (
+      <Card className="max-w-md mx-auto mt-8" data-testid="access-denied">
+        <CardContent className="p-6 text-center">
+          <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
+            Access Denied
+          </h2>
+          <p className="text-slate-600 mb-4">
+            You don't have permission to access this content.
           </p>
-        </div>
-
-        {/* Required Roles */}
-        <div>
-          <h3 className="font-medium mb-3">Required Access Level</h3>
-          <div className="space-y-2">
-            {allowedRoles.map(role => {
-              const config = roleConfig[role];
-              const RoleIcon = config.icon;
-              
-              return (
-                <div 
-                  key={role}
-                  className="flex items-center space-x-3 p-3 rounded-lg border"
-                >
-                  <RoleIcon className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">{config.label}</span>
-                      <Badge variant="outline">{role}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {config.description}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="text-sm text-slate-500">
+            <p>Required role{allowedRoles.length > 1 ? 's' : ''}: {allowedRoles.join(', ')}</p>
+            <p>Your role: {userRole}</p>
           </div>
-        </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-        {/* Help Message */}
-        <Alert>
-          <Shield className="h-4 w-4" />
-          <AlertTitle>Need Access?</AlertTitle>
-          <AlertDescription>
-            Contact your administrator to request the appropriate role permissions. 
-            Include details about what you need to access and why.
-          </AlertDescription>
-        </Alert>
-
-        {/* Navigation */}
-        <div className="flex items-center justify-between pt-4 border-t">
-          <Button variant="outline" asChild data-testid="button-go-back">
-            <Link href={redirectTo}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Go Back
-            </Link>
-          </Button>
-          
-          <div className="text-sm text-muted-foreground">
-            Need help? Contact support
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  // User has permission, render children
+  return <>{children}</>;
 }
 
-// Utility hook for checking roles
-export function useRole() {
-  const { user } = useAuth();
-  
-  const hasRole = (role: UserRole): boolean => {
-    if (!user) return false;
-    return (user as User).role === role;
+/**
+ * Hook for checking role permissions
+ */
+export function useRoleCheck() {
+  const { user, isAuthenticated } = useAuth();
+
+  const hasRole = (role: string): boolean => {
+    if (!isAuthenticated || !user) return false;
+    return user.role === role || user.role === 'admin';
   };
 
-  const hasAnyRole = (roles: UserRole[]): boolean => {
-    if (!user) return false;
-    return roles.includes((user as User).role);
+  const hasAnyRole = (roles: string[]): boolean => {
+    if (!isAuthenticated || !user) return false;
+    return roles.some(role => hasRole(role));
+  };
+
+  const hasAllRoles = (roles: string[]): boolean => {
+    if (!isAuthenticated || !user) return false;
+    return roles.every(role => hasRole(role));
   };
 
   const isProvider = (): boolean => hasRole('provider');
@@ -244,24 +129,60 @@ export function useRole() {
   const isAdmin = (): boolean => hasRole('admin');
 
   return {
-    user: user as User | null,
     hasRole,
     hasAnyRole,
+    hasAllRoles,
     isProvider,
     isBilling,
     isAdmin,
+    userRole: user?.role,
   };
 }
 
-// Higher-order component for role-based route protection
+/**
+ * Component variants for common role patterns
+ */
+export const ProviderOnly = ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['provider']} fallback={fallback}>
+    {children}
+  </RoleGuard>
+);
+
+export const BillingOnly = ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['billing']} fallback={fallback}>
+    {children}
+  </RoleGuard>
+);
+
+export const AdminOnly = ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['admin']} fallback={fallback}>
+    {children}
+  </RoleGuard>
+);
+
+export const BillingOrAdmin = ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['billing', 'admin']} fallback={fallback}>
+    {children}
+  </RoleGuard>
+);
+
+export const ProviderOrBilling = ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['provider', 'billing']} fallback={fallback}>
+    {children}
+  </RoleGuard>
+);
+
+/**
+ * Higher-order component for role-based route protection
+ */
 export function withRoleGuard<P extends object>(
-  Component: React.ComponentType<P>,
-  allowedRoles: UserRole[],
-  options?: Omit<RoleGuardProps, 'allowedRoles' | 'children'>
+  Component: React.ComponentType<P>, 
+  allowedRoles: string[],
+  requireAll = false
 ) {
-  return function ProtectedComponent(props: P) {
+  return function GuardedComponent(props: P) {
     return (
-      <RoleGuard allowedRoles={allowedRoles} {...options}>
+      <RoleGuard allowedRoles={allowedRoles} requireAll={requireAll}>
         <Component {...props} />
       </RoleGuard>
     );
