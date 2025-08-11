@@ -1,0 +1,95 @@
+You are building **MedLink Claims Hub** as a secure, installable **PWA** using ONLY stacks supported on Replit (no Next.js).
+
+### Goal
+Ship an MVP that supports pre-auths/claims, attachments, status tracking, remittances, RBAC, audit logs, and offline drafts—without real insurer integrations (stubs only).
+
+### Tech stack (Replit-friendly)
+- Frontend: React + TypeScript + Vite + Tailwind + Radix UI primitives (no Next.js)
+- Backend: Node.js + Express + TypeScript
+- ORM: Prisma (SQLite in dev; ready for Postgres via DATABASE_URL)
+- Auth: Replit Auth for dev login + JWT issued by backend; RBAC middleware
+- PWA: Web App Manifest + service worker (cache shell; background sync for drafts)
+- Client offline storage: IndexedDB (use a tiny wrapper, e.g., idb-keyval)
+- File uploads: local `/uploads` in dev; abstraction for S3/R2 via presigned URLs later
+- Tests: Jest + React Testing Library (ui), Supertest (api), Playwright (1 happy-path e2e)
+- DevX: ESLint + Prettier + Dockerfile + README + seed script
+
+### Project structure
+- /apps
+  - /web (React app with Vite, Tailwind, Radix UI, PWA)
+  - /api (Express server, Prisma, auth, connectors, file uploads)
+- /packages
+  - /types (shared TypeScript interfaces: Claim, Patient, etc.)
+  - /utils (shared helpers: zod schemas, RBAC checks)
+- root scripts: `dev` (concurrently api+web), `build`, `start`, `test`
+
+### Pages (frontend)
+- `/login` (Replit Auth handoff → backend issues JWT; store in httpOnly cookie)
+- `/` Dashboard (KPIs + quick actions: New Pre-Auth, New Claim)
+- `/claims` (table w/ filters: status, payer, date)
+- `/claims/new` (3-step wizard)
+- `/claims/:id` (timeline, notes, attachments, resubmit if denied)
+- `/preauths/new` (short wizard)
+- `/remittances` (list + detail)
+- `/settings` (profile, org, API keys, webhook endpoints)
+- `/admin` (users, roles, audit log) — admin only
+
+### API (Express)
+- Auth:
+  - `POST /auth/replit` → verify Replit Auth token → issue JWT + set cookie
+  - `POST /auth/logout`
+- Claims:
+  - `GET /claims` (org-scoped, role filtered)
+  - `POST /claims` (create: claim | preauth)
+  - `GET /claims/:id`
+  - `PATCH /claims/:id` (update status, notes)
+- Remittances:
+  - `POST /remittances` (upload + parse stub)
+  - `GET /remittances/:id`
+- Uploads:
+  - `POST /uploads/presign` (dev: returns local path; prod: S3/R2 presigned)
+  - `POST /uploads/consume` (finalize attachment record)
+- Connectors:
+  - `POST /connectors/submit` { claimId, rail: "telusEclaims" | "cdanet" | "portal" }
+  - `POST /webhooks/insurer` (stubbed status updates)
+- Admin:
+  - `GET /admin/audit`
+  - `POST /admin/users` (invite; set role)
+  - `PATCH /admin/users/:id` (role change, disable)
+
+### Prisma data model (minimum)
+- User(id, orgId, name, email, role: 'provider'|'billing'|'admin', createdAt)
+- Org(id, name, createdAt)
+- Patient(id, orgId, name, dob, identifiers JSON, createdAt)
+- Provider(id, orgId, name, discipline, licenceNumber, createdAt)
+- Appointment(id, orgId, patientId, providerId, scheduledAt)
+- Insurer(id, name, rail: 'telusEclaims'|'cdanet'|'portal')
+- Claim(id, orgId, patientId, providerId, insurerId, appointmentId?, type: 'claim'|'preauth', status: 'draft'|'submitted'|'pending'|'infoRequested'|'paid'|'denied', amount, currency, codes JSON, notes, createdBy, createdAt, updatedAt)
+- Attachment(id, claimId, url, mime, kind: 'photo'|'pdf'|'note', checksum, createdAt)
+- Remittance(id, insurerId, claimId, status, amountPaid, raw JSON, createdAt)
+- AuditEvent(id, orgId, actorUserId, type, details JSON, ip, userAgent, createdAt)
+
+Include `prisma/seed.ts` to create one Org, two Users (provider/billing), one Patient, one Provider, one sample Claim.
+
+### Auth & RBAC
+- Use Replit Auth on the frontend to get the user identity during dev.
+- Backend `POST /auth/replit` verifies the Replit token and issues a short-lived JWT (httpOnly cookie).
+- Middleware reads JWT → sets `req.user` (id, orgId, role). Enforce:
+  - provider → access own claims
+  - billing → all claims in org
+  - admin → org + /admin endpoints
+- Add CSRF protection for mutating routes.
+
+### PWA & offline
+- `manifest.webmanifest`, icons, `service-worker.ts`:
+  - Cache app shell and last 10 visited pages.
+  - Queue unsent operations (create/update claim) while offline; background sync when online.
+- IndexedDB “drafts” store: autosave every 2s during wizards; sync to server when online.
+
+### File handling
+- Client: image/PDF capture with auto-crop/deskew stub; PDF size limit check.
+- Server: in dev, store files under `/uploads` and create Attachment records.
+- Abstraction layer to swap to S3/R2 later; TODO comments where to add presigning.
+
+### Connector adapters (stubs only)
+Create `/api/src/connectors/*` with a common interface:

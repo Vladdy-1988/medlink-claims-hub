@@ -1,0 +1,73 @@
+You are building **MedLink Claims Hub**: a secure, installable web app (PWA) that lets verified providers submit and track pre-authorizations and claims without bloating the main marketplace.
+
+### Goal
+Ship an MVP that’s production-grade in structure (auth, RBAC, audit logs, tests) but simple in scope: create pre-auths/claims, attach docs/photos, see status and remittances, and sync with the marketplace via API.
+
+### Tech stack (use these)
+- Next.js (App Router) + TypeScript
+- Tailwind + shadcn/ui (minimal, clean UI)
+- Prisma ORM; default to SQLite for dev, ready to switch to Postgres via DATABASE_URL
+- NextAuth (OIDC) for SSO with the marketplace (stub an OIDC provider + email/pass fallback for dev)
+- PWA: service worker, web app manifest, offline draft support
+- File uploads: S3-compatible (abstracted, e.g., R2/S3); use presigned URLs
+- Client storage: IndexedDB for offline drafts (claims not yet submitted)
+- Background jobs: lightweight queue (e.g., server actions or a jobs route; stub BullMQ interface but keep in-process for now)
+- Testing: Jest + React Testing Library; Playwright for one happy-path e2e
+- Lint/format: ESLint + Prettier
+- Dockerfile + simple GitHub-style CI script
+
+### Pages / routes
+- /login
+- / (Dashboard): KPIs + quick actions (“New Pre-Auth”, “New Claim”)
+- /claims (table w/ filters: status, payer, date)
+- /claims/new (wizard)
+- /claims/[id] (timeline: created → submitted → payer response → paid/denied; notes; attachments)
+- /preauths/new (shorter wizard)
+- /remittances (list + detail view)
+- /settings (profile, org, API keys, webhook endpoints)
+- /admin (only for role=admin): users, roles, audit log viewer
+
+### Core flows
+1) **Create Pre-Auth**
+   - Pull patient/provider/appointment if `appointmentId` is provided via querystring.
+   - Enter procedure codes, fees, notes; attach photos/PDFs (auto-crop/deskew on upload).
+   - Save as draft offline (IndexedDB) until user is online; then submit.
+2) **Submit Claim**
+   - Select patient + services, attach E-sign or treatment notes.
+   - Choose “rail”: `telusEclaims`, `cdanet`, or `portalUpload`.
+   - On submit, call a **Connector Adapter** and persist status.
+3) **Track & Reconcile**
+   - Status badges (Draft, Submitted, Pending, Info Requested, Paid, Denied).
+   - Upload/parse remittance (stub parser); reconcile to claim and mark Paid/Denied.
+
+### Data model (Prisma)
+- User(id, name, email, role: 'provider'|'billing'|'admin', orgId)
+- Org(id, name)
+- Patient(id, orgId, name, dob, identifiers JSON)
+- Provider(id, orgId, name, discipline, licenceNumber)
+- Appointment(id, orgId, patientId, providerId, scheduledAt)
+- Insurer(id, name, rail: 'telusEclaims'|'cdanet'|'portal')
+- Claim(id, orgId, patientId, providerId, insurerId, appointmentId?, type: 'claim'|'preauth', status, amount, currency, codes JSON, notes, createdBy)
+- Attachment(id, claimId, url, mime, kind: 'photo'|'pdf'|'note', checksum)
+- Remittance(id, insurerId, claimId, status, amountPaid, raw JSON)
+- AuditEvent(id, orgId, actorUserId, type, details JSON, ip, userAgent, createdAt)
+
+Generate Prisma schema + seed script (one org, two users, one sample patient/provider/claim).
+
+### Auth & RBAC
+- NextAuth OIDC provider (env vars); for dev, include Credentials provider.
+- Middleware: protect all routes except /login, static assets, manifest, sw.
+- Roles: provider (own claims), billing (all claims in org), admin (org + admin pages).
+- Server-side checks on API routes.
+
+### API
+- /api/claims [GET, POST]
+- /api/claims/[id] [GET, PATCH]
+- /api/remittances [POST]
+- /api/upload-url [POST] (returns presigned upload URL)
+- /api/connectors/submit [POST] (body: { claimId, rail })
+- /api/webhooks/insurer [POST] (receive status updates)
+Return typed responses; add zod validation.
+
+### Connector adapters (stub only)
+Create `lib/connectors/` with an interface:
