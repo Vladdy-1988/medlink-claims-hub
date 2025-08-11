@@ -95,7 +95,11 @@ export class DatabaseStorage implements IStorage {
   async upsertUser(userData: UpsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
-      .values(userData)
+      .values({
+        ...userData,
+        // Auto-assign to first organization for development
+        orgId: userData.orgId || (await this.getFirstOrganization())?.id,
+      })
       .onConflictDoUpdate({
         target: users.id,
         set: {
@@ -105,6 +109,11 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
+  }
+
+  async getFirstOrganization(): Promise<{ id: string } | undefined> {
+    const [org] = await db.select({ id: organizations.id }).from(organizations).limit(1);
+    return org;
   }
 
   async getOrganization(id: string): Promise<Organization | undefined> {
