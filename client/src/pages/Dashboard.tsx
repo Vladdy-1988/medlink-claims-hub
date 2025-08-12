@@ -6,6 +6,9 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import StatusBadge from "@/components/StatusBadge";
+import { DashboardKpis, createDashboardKpis } from "@/components/DashboardKpis";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import { Plus, CheckCircle, Upload } from "lucide-react";
 import { Link } from "wouter";
 
 interface DashboardStats {
@@ -69,125 +72,45 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="py-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-        {/* Page Header */}
-        <div className="md:flex md:items-center md:justify-between">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-2xl font-bold leading-7 text-slate-900 sm:text-3xl sm:truncate">
-              Dashboard
-            </h2>
-            <div className="mt-1 flex flex-col sm:flex-row sm:flex-wrap sm:mt-0 sm:space-x-6">
-              <div className="mt-2 flex items-center text-sm text-slate-500">
-                <i className="fas fa-calendar mr-1.5 text-slate-400"></i>
-                <span data-testid="current-date">{currentDate}</span>
+    <>
+      <OfflineBanner data-testid="offline-banner" />
+      <div className="py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+          {/* Page Header */}
+          <div className="md:flex md:items-center md:justify-between">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-2xl font-bold leading-7 text-slate-900 dark:text-slate-100 sm:text-3xl sm:truncate">
+                Dashboard
+              </h2>
+              <div className="mt-1 flex flex-col sm:flex-row sm:flex-wrap sm:mt-0 sm:space-x-6">
+                <div className="mt-2 flex items-center text-sm text-slate-500 dark:text-slate-400">
+                  <span data-testid="current-date">{currentDate}</span>
+                </div>
               </div>
             </div>
+            <div className="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+              <Link href="/claims/new">
+                <Button data-testid="button-new-claim">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Claim
+                </Button>
+              </Link>
+              <Link href="/preauths/new">
+                <Button variant="outline" data-testid="button-new-preauth">
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  New Pre-Auth
+                </Button>
+              </Link>
+            </div>
           </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4">
-            <Link href="/claims/new">
-              <Button data-testid="button-new-claim">
-                <i className="fas fa-plus mr-2"></i>
-                New Claim
-              </Button>
-            </Link>
-            <Link href="/preauths/new">
-              <Button variant="outline" className="ml-3" data-testid="button-new-preauth">
-                <i className="fas fa-check-circle mr-2"></i>
-                New Pre-Auth
-              </Button>
-            </Link>
+
+          {/* KPI Cards */}
+          <div className="mt-8">
+            <DashboardKpis
+              kpis={stats ? createDashboardKpis(stats) : []}
+              isLoading={statsLoading}
+            />
           </div>
-        </div>
-
-        {/* KPI Cards */}
-        <div className="mt-8">
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Total Claims */}
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
-                      <i className="fas fa-file-medical text-primary-600"></i>
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-slate-500 truncate">Total Claims</dt>
-                      <dd className="text-2xl font-semibold text-slate-900" data-testid="kpi-total-claims">
-                        {statsLoading ? '...' : stats?.totalClaims || 0}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Pending Claims */}
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 bg-warning-100 rounded-lg flex items-center justify-center">
-                      <i className="fas fa-clock text-warning-600"></i>
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-slate-500 truncate">Pending</dt>
-                      <dd className="text-2xl font-semibold text-slate-900" data-testid="kpi-pending-claims">
-                        {statsLoading ? '...' : stats?.pendingClaims || 0}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Success Rate */}
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 bg-success-100 rounded-lg flex items-center justify-center">
-                      <i className="fas fa-check-circle text-success-600"></i>
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-slate-500 truncate">Success Rate</dt>
-                      <dd className="text-2xl font-semibold text-slate-900" data-testid="kpi-success-rate">
-                        {statsLoading ? '...' : `${stats?.successRate?.toFixed(1) || 0}%`}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Revenue */}
-            <Card>
-              <CardContent className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 bg-success-100 rounded-lg flex items-center justify-center">
-                      <i className="fas fa-dollar-sign text-success-600"></i>
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-slate-500 truncate">This Month</dt>
-                      <dd className="text-2xl font-semibold text-slate-900" data-testid="kpi-revenue">
-                        {statsLoading ? '...' : formatCurrency(stats?.monthlyRevenue || 0)}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
 
         {/* Recent Activity and Quick Actions */}
         <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -254,18 +177,18 @@ export default function Dashboard() {
                 <Link href="/claims/new">
                   <Button
                     variant="outline"
-                    className="w-full justify-start p-4 h-auto"
+                    className="w-full justify-start p-4 h-auto hover:bg-slate-50 dark:hover:bg-slate-800"
                     data-testid="quick-action-new-claim"
                   >
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
-                          <i className="fas fa-plus text-primary-600"></i>
+                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                          <Plus className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                         </div>
                       </div>
                       <div className="ml-4 text-left">
-                        <p className="text-sm font-medium text-slate-900">Create New Claim</p>
-                        <p className="text-sm text-slate-500">Submit a new insurance claim</p>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Create New Claim</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Submit a new insurance claim</p>
                       </div>
                     </div>
                   </Button>
@@ -274,18 +197,18 @@ export default function Dashboard() {
                 <Link href="/preauths/new">
                   <Button
                     variant="outline"
-                    className="w-full justify-start p-4 h-auto"
+                    className="w-full justify-start p-4 h-auto hover:bg-slate-50 dark:hover:bg-slate-800"
                     data-testid="quick-action-new-preauth"
                   >
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-success-100 rounded-lg flex items-center justify-center">
-                          <i className="fas fa-check-circle text-success-600"></i>
+                        <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+                          <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                         </div>
                       </div>
                       <div className="ml-4 text-left">
-                        <p className="text-sm font-medium text-slate-900">New Pre-Authorization</p>
-                        <p className="text-sm text-slate-500">Request treatment approval</p>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">New Pre-Authorization</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Request treatment approval</p>
                       </div>
                     </div>
                   </Button>
@@ -294,18 +217,18 @@ export default function Dashboard() {
                 <Link href="/remittances">
                   <Button
                     variant="outline"
-                    className="w-full justify-start p-4 h-auto"
+                    className="w-full justify-start p-4 h-auto hover:bg-slate-50 dark:hover:bg-slate-800"
                     data-testid="quick-action-upload-remittance"
                   >
                     <div className="flex items-center">
                       <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-warning-100 rounded-lg flex items-center justify-center">
-                          <i className="fas fa-upload text-warning-600"></i>
+                        <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-900 rounded-lg flex items-center justify-center">
+                          <Upload className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
                         </div>
                       </div>
                       <div className="ml-4 text-left">
-                        <p className="text-sm font-medium text-slate-900">Upload Remittance</p>
-                        <p className="text-sm text-slate-500">Process payment notifications</p>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Upload Remittance</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Process payment notifications</p>
                       </div>
                     </div>
                   </Button>
@@ -316,5 +239,6 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    </>
   );
 }
