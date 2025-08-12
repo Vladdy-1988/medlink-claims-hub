@@ -4,8 +4,9 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
-import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema } from "@shared/schema";
+import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, insertPushSubscriptionSchema } from "@shared/schema";
 import { z } from "zod";
+import { PushNotificationService } from "./pushService";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -53,6 +54,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // Push Notifications API
+  app.get('/api/push/vapid-key', (req, res) => {
+    res.json({ publicKey: PushNotificationService.getVAPIDPublicKey() });
+  });
+
+  app.post('/api/push/subscribe', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId) {
+        return res.status(400).json({ message: "User not associated with organization" });
+      }
+
+      const subscriptionData = insertPushSubscriptionSchema.parse({
+        ...req.body,
+        userId: req.user.claims.sub,
+        orgId: user.orgId,
+      });
+
+      await PushNotificationService.savePushSubscription(
+        req.user.claims.sub,
+        user.orgId,
+        {
+          endpoint: subscriptionData.endpoint,
+          keys: {
+            p256dh: subscriptionData.p256dhKey,
+            auth: subscriptionData.authKey,
+          },
+        },
+        req.get('User-Agent')
+      );
+
+      // Enable notifications for the user
+      await storage.updateUser(req.user.claims.sub, { notificationsEnabled: true });
+
+      await auditLog(req, 'push_subscription_created', { endpoint: subscriptionData.endpoint });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving push subscription:", error);
+      res.status(500).json({ message: "Failed to save push subscription" });
+    }
+  });
+
+  app.post('/api/push/test', isAuthenticated, async (req: any, res) => {
+    try {
+      const result = await PushNotificationService.sendTestNotification(req.user.claims.sub);
+      
+      await auditLog(req, 'test_notification_sent', result);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error sending test notification:", error);
+      res.status(500).json({ message: "Failed to send test notification" });
+    }
+  });
+
+  app.post('/api/push/unsubscribe', isAuthenticated, async (req: any, res) => {
+    try {
+      const { endpoint } = req.body;
+      if (!endpoint) {
+        return res.status(400).json({ message: "Endpoint required" });
+      }
+
+      await PushNotificationService.removeSubscription(req.user.claims.sub, endpoint);
+      
+      // Disable notifications for the user if this was their last subscription
+      await storage.updateUser(req.user.claims.sub, { notificationsEnabled: false });
+
+      await auditLog(req, 'push_subscription_removed', { endpoint });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing push subscription:", error);
+      res.status(500).json({ message: "Failed to remove push subscription" });
+    }
+  });
+
+  // Background sync endpoint for periodic updates
+  app.get('/api/claims/updates', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId) {
+        return res.status(400).json({ message: "User not associated with organization" });
+      }
+
+      const { since } = req.query;
+      const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 15 * 60 * 1000); // Default to last 15 minutes
+
+      // Get claims that have been updated since the specified time
+      const claims = await storage.getClaims(user.orgId, user.id, user.role);
+      const recentlyUpdated = claims.filter(claim => 
+        new Date(claim.updatedAt) > sinceDate
+      );
+
+      res.json({
+        updates: recentlyUpdated,
+        timestamp: new Date().toISOString(),
+        hasUpdates: recentlyUpdated.length > 0,
+      });
+    } catch (error) {
+      console.error("Error fetching claim updates:", error);
+      res.status(500).json({ message: "Failed to fetch claim updates" });
     }
   });
 
@@ -136,7 +242,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const oldStatus = claim.status;
       const updatedClaim = await storage.updateClaim(req.params.id, req.body);
+      
+      // Send push notification if status changed to specific statuses
+      if (req.body.status && req.body.status !== oldStatus) {
+        const notificationStatuses = ['paid', 'denied', 'infoRequested', 'submitted'];
+        if (notificationStatuses.includes(req.body.status)) {
+          try {
+            const claimOwner = await storage.getUser(claim.createdBy);
+            if (claimOwner && claimOwner.notificationsEnabled) {
+              await PushNotificationService.sendClaimStatusNotification(
+                claim.id,
+                req.body.status,
+                claim.createdBy
+              );
+            }
+          } catch (notificationError) {
+            // Don't fail the claim update if notification fails
+            console.error("Failed to send push notification:", notificationError);
+          }
+        }
+      }
       
       await auditLog(req, 'claim_updated', { claimId: req.params.id, changes: req.body });
       

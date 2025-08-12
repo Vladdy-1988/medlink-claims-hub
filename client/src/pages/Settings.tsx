@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,11 +12,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Bell, TestTube, Smartphone } from "lucide-react";
 
 export default function Settings() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const {
+    isSupported: notificationsSupported,
+    permission: notificationPermission,
+    subscribe: subscribeToNotifications,
+    unsubscribe: unsubscribeFromNotifications,
+    sendTestNotification,
+    isSubscribing,
+    isUnsubscribing,
+    isSendingTest,
+  } = useNotifications();
   const [profileData, setProfileData] = useState({
     firstName: '',
     lastName: '',
@@ -237,36 +249,124 @@ export default function Settings() {
 
           {/* Notification Settings */}
           <TabsContent value="notifications">
-            <Card>
-              <CardHeader>
-                <CardTitle>Notification Preferences</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
+            <div className="space-y-6">
+              {/* Push Notifications */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Bell className="h-5 w-5" />
+                    Push Notifications
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {!notificationsSupported ? (
+                    <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-lg dark:border-yellow-800 dark:bg-yellow-950">
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                          Push notifications are not supported in your browser.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label>Enable Push Notifications</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Get instant notifications about claim status changes
+                          </p>
+                          {notificationPermission !== 'granted' && (
+                            <p className="text-xs text-orange-600 dark:text-orange-400">
+                              Permission: {notificationPermission}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {user?.notificationsEnabled && notificationPermission === 'granted' ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={unsubscribeFromNotifications}
+                              disabled={isUnsubscribing}
+                              data-testid="button-disable-notifications"
+                            >
+                              {isUnsubscribing ? 'Disabling...' : 'Disable'}
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={subscribeToNotifications}
+                              disabled={isSubscribing}
+                              data-testid="button-enable-notifications"
+                            >
+                              {isSubscribing ? 'Enabling...' : 'Enable'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {user?.notificationsEnabled && notificationPermission === 'granted' && (
+                        <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg dark:bg-green-950 dark:border-green-800">
+                          <div className="flex items-center gap-2">
+                            <Bell className="h-4 w-4 text-green-600 dark:text-green-400" />
+                            <span className="text-sm text-green-800 dark:text-green-200">
+                              Push notifications are enabled
+                            </span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={sendTestNotification}
+                            disabled={isSendingTest}
+                            data-testid="button-test-notification"
+                          >
+                            <TestTube className="h-4 w-4 mr-2" />
+                            {isSendingTest ? 'Sending...' : 'Test'}
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Email & SMS Notifications */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Email & SMS Preferences</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="emailNotifications">Email Notifications</Label>
-                      <p className="text-sm text-slate-500">Receive notifications via email</p>
+                      <p className="text-sm text-muted-foreground">
+                        Receive updates via email
+                      </p>
                     </div>
                     <Switch
                       id="emailNotifications"
                       checked={notificationSettings.emailNotifications}
-                      onCheckedChange={(checked) => setNotificationSettings(prev => ({ ...prev, emailNotifications: checked }))}
+                      onCheckedChange={(checked) => 
+                        setNotificationSettings(prev => ({ ...prev, emailNotifications: checked }))
+                      }
                       data-testid="switch-email-notifications"
                     />
                   </div>
 
-                  <Separator />
-
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="smsNotifications">SMS Notifications</Label>
-                      <p className="text-sm text-slate-500">Receive notifications via text message</p>
+                      <p className="text-sm text-muted-foreground">
+                        Receive urgent updates via SMS
+                      </p>
                     </div>
                     <Switch
                       id="smsNotifications"
                       checked={notificationSettings.smsNotifications}
-                      onCheckedChange={(checked) => setNotificationSettings(prev => ({ ...prev, smsNotifications: checked }))}
+                      onCheckedChange={(checked) => 
+                        setNotificationSettings(prev => ({ ...prev, smsNotifications: checked }))
+                      }
                       data-testid="switch-sms-notifications"
                     />
                   </div>
@@ -276,55 +376,62 @@ export default function Settings() {
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="claimUpdates">Claim Status Updates</Label>
-                      <p className="text-sm text-slate-500">Get notified when claim status changes</p>
+                      <p className="text-sm text-muted-foreground">
+                        Get notified when claim status changes
+                      </p>
                     </div>
                     <Switch
                       id="claimUpdates"
                       checked={notificationSettings.claimUpdates}
-                      onCheckedChange={(checked) => setNotificationSettings(prev => ({ ...prev, claimUpdates: checked }))}
+                      onCheckedChange={(checked) => 
+                        setNotificationSettings(prev => ({ ...prev, claimUpdates: checked }))
+                      }
                       data-testid="switch-claim-updates"
                     />
                   </div>
 
-                  <Separator />
-
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="paymentReminders">Payment Reminders</Label>
-                      <p className="text-sm text-slate-500">Receive reminders for outstanding payments</p>
+                      <p className="text-sm text-muted-foreground">
+                        Reminders about overdue payments
+                      </p>
                     </div>
                     <Switch
                       id="paymentReminders"
                       checked={notificationSettings.paymentReminders}
-                      onCheckedChange={(checked) => setNotificationSettings(prev => ({ ...prev, paymentReminders: checked }))}
+                      onCheckedChange={(checked) => 
+                        setNotificationSettings(prev => ({ ...prev, paymentReminders: checked }))
+                      }
                       data-testid="switch-payment-reminders"
                     />
                   </div>
 
-                  <Separator />
-
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <Label htmlFor="weeklyReports">Weekly Reports</Label>
-                      <p className="text-sm text-slate-500">Receive weekly summary reports</p>
+                      <p className="text-sm text-muted-foreground">
+                        Weekly summary of activity
+                      </p>
                     </div>
                     <Switch
                       id="weeklyReports"
                       checked={notificationSettings.weeklyReports}
-                      onCheckedChange={(checked) => setNotificationSettings(prev => ({ ...prev, weeklyReports: checked }))}
+                      onCheckedChange={(checked) => 
+                        setNotificationSettings(prev => ({ ...prev, weeklyReports: checked }))
+                      }
                       data-testid="switch-weekly-reports"
                     />
                   </div>
-                </div>
 
-                <div className="flex justify-end">
-                  <Button data-testid="button-save-notifications">
-                    <i className="fas fa-save mr-2"></i>
-                    Save Preferences
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="flex justify-end">
+                    <Button data-testid="button-save-notifications">
+                      Save Preferences
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Security Settings */}
