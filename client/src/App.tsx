@@ -24,9 +24,14 @@ function Router() {
 
   // Handle SSO login on component mount
   useEffect(() => {
-    handleSSOLogin();
+    try {
+      handleSSOLogin();
+    } catch (error) {
+      console.log("SSO login handler error:", error);
+    }
   }, []);
 
+  // Simple fallback if loading takes too long
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -38,22 +43,23 @@ function Router() {
     );
   }
 
+  // Force show landing page if not authenticated
+  if (!isAuthenticated) {
+    return <Landing />;
+  }
+
   return (
     <Switch>
-      {!isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
-        <Layout>
-          <Route path="/" component={Dashboard} />
-          <Route path="/claims" component={Claims} />
-          <Route path="/claims/new" component={NewClaim} />
-          <Route path="/preauths/new" component={NewPreAuth} />
-          <Route path="/claims/:id" component={ClaimDetail} />
-          <Route path="/remittances" component={Remittances} />
-          <Route path="/settings" component={Settings} />
-          <Route path="/admin" component={Admin} />
-        </Layout>
-      )}
+      <Layout>
+        <Route path="/" component={Dashboard} />
+        <Route path="/claims" component={Claims} />
+        <Route path="/claims/new" component={NewClaim} />
+        <Route path="/preauths/new" component={NewPreAuth} />
+        <Route path="/claims/:id" component={ClaimDetail} />
+        <Route path="/remittances" component={Remittances} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/admin" component={Admin} />
+      </Layout>
       <Route component={NotFound} />
       <InstallPrompt />
     </Switch>
