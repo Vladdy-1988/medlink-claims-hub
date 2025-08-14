@@ -10,8 +10,10 @@ import { storage } from "./storage";
 
 // Set default REPLIT_DOMAINS if not provided for development
 if (!process.env.REPLIT_DOMAINS) {
-  console.warn("REPLIT_DOMAINS not set, using localhost for development");
-  process.env.REPLIT_DOMAINS = "localhost:5000";
+  console.warn("REPLIT_DOMAINS not set, using detected domain for development");
+  // Use the actual Replit domain if available
+  const replitDomain = process.env.REPLIT_DEV_DOMAIN || "240ab47d-e86c-462a-b682-2cdb8c3824f7-00-3ctlzqxartp8m.picard.replit.dev";
+  process.env.REPLIT_DOMAINS = replitDomain;
 }
 
 const getOidcConfig = memoize(
