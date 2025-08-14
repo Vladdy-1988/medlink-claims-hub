@@ -56,6 +56,7 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
+  externalId: varchar("external_id", { length: 255 }).unique(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

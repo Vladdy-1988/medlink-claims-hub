@@ -153,8 +153,15 @@ export class DatabaseStorage implements IStorage {
     return org;
   }
 
+  async getOrganizationByExternalId(externalId: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.externalId, externalId));
+    return org;
+  }
+
   async createOrganization(orgData: InsertOrganization): Promise<Organization> {
-    const [org] = await db.insert(organizations).values(orgData).returning();
+    // Remove externalId if it exists since the column may not be in the database yet
+    const { externalId, ...safeOrgData } = orgData as any;
+    const [org] = await db.insert(organizations).values(safeOrgData).returning();
     return org;
   }
 

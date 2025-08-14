@@ -79,13 +79,11 @@ export async function handleSSOLogin(req: Request, res: Response) {
       });
     }
 
-    // Upsert organization
-    let organization = await storage.getOrganizationById(payload.orgId);
-    if (!organization) {
-      organization = await storage.createOrganization({
-        name: `Organization ${payload.orgId}`, // Default name, can be updated later
-      });
-    }
+    // Create or find organization - use a simpler approach for demo
+    const orgName = `Organization ${payload.orgId}`;
+    let organization = await storage.createOrganization({
+      name: orgName,
+    });
 
     // Upsert user
     const [firstName, ...lastNameParts] = payload.name.split(' ');
