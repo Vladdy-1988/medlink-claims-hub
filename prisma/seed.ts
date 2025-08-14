@@ -1,10 +1,19 @@
 import { db } from "../server/db";
 import { organizations, users, providers, patients } from "../shared/schema";
+import { eq } from "drizzle-orm";
 
 async function seed() {
   console.log("Starting database seed...");
 
   try {
+    // Check if organization already exists (idempotent seed)
+    const existingOrgs = await db.select().from(organizations).limit(1);
+    
+    if (existingOrgs.length > 0) {
+      console.log("Database already seeded. Skipping seed operation.");
+      return;
+    }
+
     // Create sample organization
     const [org] = await db
       .insert(organizations)
@@ -83,13 +92,18 @@ async function seed() {
   }
 }
 
-// Run the seed function
-seed()
-  .then(() => {
-    console.log("Seed script completed");
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error("Seed script failed:", error);
-    process.exit(1);
-  });
+// Export the seed function as default for reuse
+export default seed;
+
+// Run the seed function if this file is executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seed()
+    .then(() => {
+      console.log("Seed script completed");
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error("Seed script failed:", error);
+      process.exit(1);
+    });
+}

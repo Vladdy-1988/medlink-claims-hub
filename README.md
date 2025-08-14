@@ -32,9 +32,10 @@ A comprehensive healthcare claims management system built as a secure, installab
 - **RESTful API** design with comprehensive error handling
 
 ### Infrastructure
-- **PostgreSQL** with Neon serverless driver
-- **Google Cloud Storage** for file attachments
-- **Replit** deployment platform
+- **PostgreSQL** with Neon serverless database (production) or local PostgreSQL (development)
+- **Prisma** ORM with migrations and type-safe database access
+- **Google Cloud Storage** for file attachments with Object Storage abstraction
+- **Replit** deployment platform with integrated database hosting
 
 ## Quick Start on Replit
 
@@ -52,8 +53,28 @@ A comprehensive healthcare claims management system built as a secure, installab
    ```
 
 4. **Database Setup**:
+   
+   **For Production (Neon PostgreSQL)**:
+   - Create a [Neon](https://neon.tech) database account
+   - Create a new project and database
+   - Copy the connection string from your Neon dashboard
+   - Set `DATABASE_URL` environment variable in Replit Secrets or your `.env` file
+   
+   **Example Neon DATABASE_URL**:
+   ```
+   postgresql://username:password@ep-example-123456.us-east-1.aws.neon.tech/medlink_claims_hub?sslmode=require
+   ```
+   
+   **Then run setup commands**:
    ```bash
-   npm run db:push     # Push schema to database
+   npx prisma generate     # Generate Prisma client
+   npx prisma migrate deploy  # Run migrations
+   npx prisma db seed      # Seed with sample data
+   ```
+   
+   **For Development**:
+   ```bash
+   npm run db:push     # Push schema changes directly
    npm run db:seed     # Seed with sample data
    ```
 
@@ -87,10 +108,13 @@ The application will be available at the Replit URL or `http://localhost:5000` f
 - `npm run api:test` - Run API tests
 
 ### Database
-- `npm run db:generate` - Generate migration files
-- `npm run db:migrate` - Run database migrations
-- `npm run db:push` - Push schema changes directly
-- `npm run db:seed` - Seed database with sample data
+- `npx prisma generate` - Generate Prisma client from schema
+- `npx prisma migrate dev` - Create and apply new migration (development)
+- `npx prisma migrate deploy` - Apply migrations (production)
+- `npx prisma db push` - Push schema changes directly (development)
+- `npx prisma db seed` - Seed database with sample data
+- `npx prisma studio` - Open Prisma Studio database GUI
+- `npx prisma migrate reset` - Reset database and apply all migrations
 
 ### Testing
 - `npm run test:unit` - Run unit tests
@@ -119,6 +143,10 @@ The application will be available at the Replit URL or `http://localhost:5000` f
 │   └── index.ts           # Server entry point
 ├── shared/                # Shared TypeScript definitions
 │   └── schema.ts          # Database schema and types
+├── prisma/                # Database configuration
+│   ├── schema.prisma      # Prisma schema definition
+│   ├── migrations/        # Database migration files
+│   └── seed.ts            # Database seeding script
 ├── tests/                 # Test suites
 │   ├── api/              # API integration tests
 │   ├── unit/             # Unit tests

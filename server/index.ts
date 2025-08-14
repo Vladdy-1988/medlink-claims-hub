@@ -37,6 +37,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Run one-time seed guard on boot
+  const { runSeedGuard } = await import("./seedGuard");
+  await runSeedGuard();
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
