@@ -1,301 +1,284 @@
-import { formatDistanceToNow } from "date-fns";
-import { 
-  CheckCircle, 
-  Clock, 
-  AlertCircle, 
-  XCircle, 
-  FileText, 
-  Send,
-  CreditCard,
-  Eye
-} from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { Check, Clock, AlertCircle, X, FileText, Send, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
-export interface TimelineEvent {
+interface TimelineEvent {
   id: string;
-  type: 'created' | 'submitted' | 'processing' | 'approved' | 'paid' | 'denied' | 'info_requested' | 'attachment_added' | 'note_added';
-  title: string;
-  description?: string;
+  status: string;
   timestamp: string;
+  description?: string;
   actor?: string;
-  metadata?: Record<string, any>;
+  details?: any;
 }
 
 interface ClaimTimelineProps {
-  events: TimelineEvent[];
+  claim: {
+    id: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    notes?: string;
+    events?: TimelineEvent[];
+  };
+  onResubmit?: () => void;
   className?: string;
 }
 
-const eventConfig = {
-  created: {
+const statusConfig = {
+  draft: {
     icon: FileText,
     color: "bg-blue-500",
-    textColor: "text-blue-700",
-    bgColor: "bg-blue-50",
+    textColor: "text-blue-600",
+    bgColor: "bg-blue-50 dark:bg-blue-950",
+    label: "Draft",
+    description: "Claim is being prepared"
   },
   submitted: {
     icon: Send,
-    color: "bg-purple-500",
-    textColor: "text-purple-700",
-    bgColor: "bg-purple-50",
+    color: "bg-yellow-500", 
+    textColor: "text-yellow-600",
+    bgColor: "bg-yellow-50 dark:bg-yellow-950",
+    label: "Submitted",
+    description: "Claim has been sent to insurer"
   },
-  processing: {
+  pending: {
     icon: Clock,
-    color: "bg-yellow-500",
-    textColor: "text-yellow-700",
-    bgColor: "bg-yellow-50",
+    color: "bg-orange-500",
+    textColor: "text-orange-600", 
+    bgColor: "bg-orange-50 dark:bg-orange-950",
+    label: "Pending Review",
+    description: "Insurer is reviewing the claim"
   },
-  approved: {
-    icon: CheckCircle,
-    color: "bg-green-500",
-    textColor: "text-green-700",
-    bgColor: "bg-green-50",
+  infoRequested: {
+    icon: AlertCircle,
+    color: "bg-purple-500",
+    textColor: "text-purple-600",
+    bgColor: "bg-purple-50 dark:bg-purple-950", 
+    label: "Information Requested",
+    description: "Additional information required"
   },
   paid: {
-    icon: CreditCard,
-    color: "bg-emerald-500",
-    textColor: "text-emerald-700",
-    bgColor: "bg-emerald-50",
+    icon: Check,
+    color: "bg-green-500",
+    textColor: "text-green-600",
+    bgColor: "bg-green-50 dark:bg-green-950",
+    label: "Paid",
+    description: "Claim has been processed and paid"
   },
   denied: {
-    icon: XCircle,
-    color: "bg-red-500",
-    textColor: "text-red-700",
-    bgColor: "bg-red-50",
-  },
-  info_requested: {
-    icon: AlertCircle,
-    color: "bg-orange-500",
-    textColor: "text-orange-700",
-    bgColor: "bg-orange-50",
-  },
-  attachment_added: {
-    icon: FileText,
-    color: "bg-slate-500",
-    textColor: "text-slate-700",
-    bgColor: "bg-slate-50",
-  },
-  note_added: {
-    icon: Eye,
-    color: "bg-slate-500",
-    textColor: "text-slate-700",
-    bgColor: "bg-slate-50",
-  },
+    icon: X,
+    color: "bg-red-500", 
+    textColor: "text-red-600",
+    bgColor: "bg-red-50 dark:bg-red-950",
+    label: "Denied",
+    description: "Claim was denied by insurer"
+  }
 };
 
-/**
- * ClaimTimeline - Displays a chronological timeline of claim events
- * 
- * Features:
- * - Visual timeline with icons and colors for different event types
- * - Relative timestamps (e.g., "2 hours ago")
- * - Actor information (who performed the action)
- * - Additional metadata display
- * - Responsive design
- */
-export function ClaimTimeline({ events, className }: ClaimTimelineProps) {
-  if (events.length === 0) {
-    return (
-      <Card className={className}>
+const statusOrder = ['draft', 'submitted', 'pending', 'infoRequested', 'paid', 'denied'];
+
+export function ClaimTimeline({ claim, onResubmit, className = "" }: ClaimTimelineProps) {
+  const currentStatus = claim.status;
+  const currentStatusIndex = statusOrder.indexOf(currentStatus);
+  
+  // Generate timeline events based on claim status and any provided events
+  const generateTimelineEvents = (): TimelineEvent[] => {
+    const events: TimelineEvent[] = [];
+    
+    // Always start with draft/creation
+    events.push({
+      id: 'created',
+      status: 'draft',
+      timestamp: claim.createdAt,
+      description: 'Claim created',
+      actor: 'System'
+    });
+
+    // Add progression events based on current status
+    if (currentStatusIndex >= statusOrder.indexOf('submitted')) {
+      events.push({
+        id: 'submitted',
+        status: 'submitted', 
+        timestamp: claim.updatedAt,
+        description: 'Claim submitted to insurer',
+        actor: 'System'
+      });
+    }
+
+    if (currentStatusIndex >= statusOrder.indexOf('pending') && currentStatus !== 'denied') {
+      events.push({
+        id: 'pending',
+        status: 'pending',
+        timestamp: claim.updatedAt,
+        description: 'Under review by insurer',
+        actor: 'Insurer'
+      });
+    }
+
+    // Add final status if applicable
+    if (currentStatus === 'paid') {
+      events.push({
+        id: 'paid',
+        status: 'paid',
+        timestamp: claim.updatedAt,
+        description: 'Claim approved and payment processed',
+        actor: 'Insurer'
+      });
+    } else if (currentStatus === 'denied') {
+      events.push({
+        id: 'denied',
+        status: 'denied',
+        timestamp: claim.updatedAt,
+        description: 'Claim was denied',
+        actor: 'Insurer'
+      });
+    } else if (currentStatus === 'infoRequested') {
+      events.push({
+        id: 'infoRequested',
+        status: 'infoRequested', 
+        timestamp: claim.updatedAt,
+        description: 'Additional information requested',
+        actor: 'Insurer'
+      });
+    }
+
+    // Add any custom events if provided
+    if (claim.events) {
+      events.push(...claim.events);
+    }
+
+    // Sort by timestamp
+    return events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  };
+
+  const timelineEvents = generateTimelineEvents();
+  const currentStatusConfig = statusConfig[currentStatus as keyof typeof statusConfig];
+
+  return (
+    <div className={`space-y-6 ${className}`}>
+      {/* Current Status Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-3">
+              <div className={`p-2 rounded-full ${currentStatusConfig?.bgColor}`}>
+                {currentStatusConfig && (
+                  <currentStatusConfig.icon className={`w-5 h-5 ${currentStatusConfig.textColor}`} />
+                )}
+              </div>
+              Current Status
+            </CardTitle>
+            <Badge 
+              className={`${currentStatusConfig?.bgColor} ${currentStatusConfig?.textColor} border-0`}
+              data-testid={`status-badge-${currentStatus}`}
+            >
+              {currentStatusConfig?.label}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground mb-4">
+            {currentStatusConfig?.description}
+          </p>
+          <div className="text-sm text-muted-foreground">
+            Last updated {formatDistanceToNow(new Date(claim.updatedAt), { addSuffix: true })}
+          </div>
+          
+          {/* Resubmit button for denied claims */}
+          {currentStatus === 'denied' && onResubmit && (
+            <div className="mt-4">
+              <Button onClick={onResubmit} data-testid="button-resubmit">
+                Resubmit Claim
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Timeline */}
+      <Card>
         <CardHeader>
           <CardTitle>Claim Timeline</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-slate-500 text-center py-8">No timeline events yet.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Sort events by timestamp (newest first)
-  const sortedEvents = [...events].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
-
-  return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle>Claim Timeline</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flow-root">
-          <ul role="list" className="-mb-8">
-            {sortedEvents.map((event, eventIdx) => {
-              const config = eventConfig[event.type] || eventConfig.note_added;
-              const Icon = config.icon;
-              const isLast = eventIdx === sortedEvents.length - 1;
-
+          <div className="relative">
+            {timelineEvents.map((event, index) => {
+              const eventConfig = statusConfig[event.status as keyof typeof statusConfig];
+              const isLast = index === timelineEvents.length - 1;
+              const isActive = event.status === currentStatus;
+              
               return (
-                <li key={event.id}>
-                  <div className="relative pb-8">
-                    {/* Connecting line */}
-                    {!isLast && (
-                      <span
-                        className="absolute left-5 top-5 -ml-px h-full w-0.5 bg-slate-200"
-                        aria-hidden="true"
-                      />
+                <div key={event.id} className="relative flex gap-4 pb-6" data-testid={`timeline-event-${event.status}`}>
+                  {/* Timeline line */}
+                  {!isLast && (
+                    <div className="absolute left-6 top-12 w-0.5 h-full bg-gray-200 dark:bg-gray-700" />
+                  )}
+                  
+                  {/* Status Icon */}
+                  <div className={`
+                    relative z-10 flex items-center justify-center w-12 h-12 rounded-full
+                    ${isActive ? eventConfig?.color : 'bg-gray-200 dark:bg-gray-700'}
+                  `}>
+                    {eventConfig && (
+                      <eventConfig.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+                    )}
+                  </div>
+                  
+                  {/* Event Content */}
+                  <div className="flex-1 min-w-0 pt-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className={`font-medium ${isActive ? eventConfig?.textColor : 'text-muted-foreground'}`}>
+                        {eventConfig?.label || event.status}
+                      </h3>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(event.timestamp), 'MMM dd, yyyy HH:mm')}
+                      </span>
+                    </div>
+                    
+                    {event.description && (
+                      <p className="text-sm text-muted-foreground mb-1">
+                        {event.description}
+                      </p>
                     )}
                     
-                    <div className="relative flex items-start space-x-3">
-                      {/* Event icon */}
-                      <div className="relative">
-                        <span
-                          className={cn(
-                            "flex h-10 w-10 items-center justify-center rounded-full",
-                            config.color
-                          )}
-                        >
-                          <Icon className="h-5 w-5 text-white" aria-hidden="true" />
-                        </span>
-                      </div>
-
-                      {/* Event content */}
-                      <div className="flex-1 min-w-0">
-                        <div className={cn("rounded-lg p-4", config.bgColor)}>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h4 className={cn("text-sm font-medium", config.textColor)}>
-                                {event.title}
-                              </h4>
-                              
-                              {event.description && (
-                                <p className="mt-1 text-sm text-slate-600">
-                                  {event.description}
-                                </p>
-                              )}
-
-                              {/* Actor information */}
-                              {event.actor && (
-                                <p className="mt-1 text-xs text-slate-500">
-                                  by {event.actor}
-                                </p>
-                              )}
-
-                              {/* Metadata */}
-                              {event.metadata && Object.keys(event.metadata).length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1">
-                                  {Object.entries(event.metadata).map(([key, value]) => (
-                                    <Badge key={key} variant="secondary" className="text-xs">
-                                      {key}: {String(value)}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Timestamp */}
-                            <div className="ml-4 flex-shrink-0 text-xs text-slate-500">
-                              <time 
-                                dateTime={event.timestamp}
-                                title={new Date(event.timestamp).toLocaleString()}
-                              >
-                                {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
-                              </time>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    {event.actor && (
+                      <p className="text-xs text-muted-foreground">
+                        by {event.actor}
+                      </p>
+                    )}
+                    
+                    {event.details && (
+                      <details className="mt-2">
+                        <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800">
+                          View details
+                        </summary>
+                        <pre className="text-xs text-muted-foreground mt-1 p-2 bg-gray-50 dark:bg-gray-900 rounded overflow-x-auto">
+                          {JSON.stringify(event.details, null, 2)}
+                        </pre>
+                      </details>
+                    )}
                   </div>
-                </li>
+                </div>
               );
             })}
-          </ul>
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+          
+          {/* Notes Section */}
+          {claim.notes && (
+            <div className="mt-6 pt-6 border-t">
+              <h3 className="font-medium mb-2 flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                Notes
+              </h3>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                {claim.notes}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
-}
-
-/**
- * Helper function to create timeline events from claim data
- */
-export function createTimelineFromClaim(claim: any): TimelineEvent[] {
-  const events: TimelineEvent[] = [];
-
-  // Created event
-  events.push({
-    id: `created-${claim.id}`,
-    type: 'created',
-    title: 'Claim Created',
-    description: `Claim ${claim.claimNumber} was created`,
-    timestamp: claim.createdAt,
-    actor: claim.createdBy || 'System',
-  });
-
-  // Status events based on current status
-  if (claim.status === 'submitted') {
-    events.push({
-      id: `submitted-${claim.id}`,
-      type: 'submitted',
-      title: 'Claim Submitted',
-      description: 'Claim has been submitted to insurance provider',
-      timestamp: claim.updatedAt,
-      metadata: {
-        'Insurance': claim.insurer?.name,
-        'Amount': `$${claim.amount}`,
-      },
-    });
-  }
-
-  if (claim.status === 'processing') {
-    events.push({
-      id: `processing-${claim.id}`,
-      type: 'processing',
-      title: 'Claim Processing',
-      description: 'Insurance provider is reviewing the claim',
-      timestamp: claim.updatedAt,
-    });
-  }
-
-  if (claim.status === 'approved') {
-    events.push({
-      id: `approved-${claim.id}`,
-      type: 'approved',
-      title: 'Claim Approved',
-      description: 'Insurance provider has approved the claim',
-      timestamp: claim.updatedAt,
-    });
-  }
-
-  if (claim.status === 'paid') {
-    events.push({
-      id: `paid-${claim.id}`,
-      type: 'paid',
-      title: 'Claim Paid',
-      description: 'Payment has been processed',
-      timestamp: claim.updatedAt,
-    });
-  }
-
-  if (claim.status === 'denied') {
-    events.push({
-      id: `denied-${claim.id}`,
-      type: 'denied',
-      title: 'Claim Denied',
-      description: 'Insurance provider has denied the claim',
-      timestamp: claim.updatedAt,
-    });
-  }
-
-  // Add attachment events if available
-  if (claim.attachments && claim.attachments.length > 0) {
-    claim.attachments.forEach((attachment: any, index: number) => {
-      events.push({
-        id: `attachment-${attachment.id}`,
-        type: 'attachment_added',
-        title: 'Attachment Added',
-        description: `${attachment.kind} attachment uploaded`,
-        timestamp: attachment.createdAt,
-        metadata: {
-          'Type': attachment.kind,
-          'Size': attachment.size ? `${Math.round(attachment.size / 1024)}KB` : 'Unknown',
-        },
-      });
-    });
-  }
-
-  return events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }

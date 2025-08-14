@@ -3,17 +3,22 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import StatusBadge from "@/components/StatusBadge";
 import { DashboardKpis, createDashboardKpis } from "@/components/DashboardKpis";
+import { ClaimsTable } from "@/components/ClaimsTable";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { Plus, CheckCircle, Upload } from "lucide-react";
+import StatusBadge from "@/components/StatusBadge";
 import { Link } from "wouter";
 
 interface DashboardStats {
   totalClaims: number;
   pendingClaims: number;
+  submittedClaims: number;
+  paidClaims: number;
+  deniedClaims: number;
+  draftClaims: number;
   successRate: number;
   monthlyRevenue: number;
 }
@@ -107,7 +112,14 @@ export default function Dashboard() {
           {/* KPI Cards */}
           <div className="mt-8">
             <DashboardKpis
-              kpis={stats ? createDashboardKpis(stats) : []}
+              stats={{
+                totalClaims: stats?.totalClaims || 0,
+                pendingClaims: stats?.pendingClaims || 0,
+                submittedClaims: stats?.submittedClaims || 0,
+                paidClaims: stats?.paidClaims || 0,
+                deniedClaims: stats?.deniedClaims || 0,
+                draftClaims: stats?.draftClaims || 0,
+              }}
               isLoading={statsLoading}
             />
           </div>
