@@ -51,6 +51,24 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // Add test route
+  app.get('/test', (req, res) => {
+    res.send(`
+      <html>
+        <head><title>MedLink Test</title></head>
+        <body>
+          <h1>✅ MedLink Claims Hub Server is Running!</h1>
+          <p>✅ Server is operational on port ${process.env.PORT || 5000}</p>
+          <p><a href="/">Go to Main Application</a></p>
+          <script>
+            console.log('Server test successful');
+            fetch('/api/auth/user').then(r => console.log('API Status:', r.status));
+          </script>
+        </body>
+      </html>
+    `);
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes

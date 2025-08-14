@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MedLink Test</title>
+</head>
+<body>
+    <h1>MedLink Claims Hub</h1>
+    <p>Application is working!</p>
+    <script>
+        console.log('Test page loaded');
+        fetch('/api/auth/user')
+            .then(res => res.json())
+            .then(data => console.log('API response:', data))
+            .catch(err => console.log('API error:', err));
+    </script>
+</body>
+</html>
