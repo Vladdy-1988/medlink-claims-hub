@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import cors from "cors";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
@@ -7,8 +8,15 @@ import { ObjectPermission } from "./objectAcl";
 import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, insertPushSubscriptionSchema } from "@shared/schema";
 import { z } from "zod";
 import { PushNotificationService } from "./pushService";
+import { handleSSOLogin, configureCORS } from "./ssoAuth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Configure CORS for SSO (only for SSO endpoint)
+  app.use('/auth/sso', cors(configureCORS()));
+
+  // SSO login endpoint (before regular auth middleware)
+  app.post('/auth/sso', handleSSOLogin);
+
   // Auth middleware
   await setupAuth(app);
 

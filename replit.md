@@ -4,7 +4,7 @@
 
 MedLink Claims Hub is a secure, installable Progressive Web App (PWA) for healthcare providers to submit and track pre-authorizations and claims. The application provides a comprehensive claims management system with offline support, file attachments, status tracking, and role-based access control. Built as a full-stack TypeScript application, it features a React frontend with Vite bundling and an Express.js backend with PostgreSQL database integration.
 
-**Recent Progress (August 2025)**: Successfully completed full application integration and testing. Migrated from SQLite to PostgreSQL (Neon) with complete Drizzle migration infrastructure. Implemented comprehensive UI components including ClaimWizard, DashboardKpis, ClaimsTable, and ClaimTimeline. Enhanced PWA features with push notifications, install prompts, and offline IndexedDB synchronization. All core pages integrated with proper data flow, error handling, and authentication. Application successfully tested and verified functional at http://localhost:5000.
+**Recent Progress (August 2025)**: Successfully completed full application integration and testing. Migrated from SQLite to PostgreSQL (Neon) with complete Drizzle migration infrastructure. Implemented comprehensive UI components including ClaimWizard, DashboardKpis, ClaimsTable, and ClaimTimeline. Enhanced PWA features with push notifications, install prompts, and offline IndexedDB synchronization. All core pages integrated with proper data flow, error handling, and authentication. Added SSO handshake functionality for marketplace integration with JWT-based shared-secret authentication, CORS configuration, and audit logging. Application successfully tested and verified functional at http://localhost:5000.
 
 ## User Preferences
 

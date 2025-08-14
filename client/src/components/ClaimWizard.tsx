@@ -48,6 +48,7 @@ interface ClaimWizardProps {
   type?: 'claim' | 'preauth';
   initialData?: Partial<ClaimData>;
   onComplete?: (claimId: string) => void;
+  prefillData?: any;
 }
 
 const AUTOSAVE_KEY = 'medlink-claim-draft';

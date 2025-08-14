@@ -148,8 +148,8 @@ export const remittances = pgTable("remittances", {
 export const auditEvents = pgTable("audit_events", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: uuid("org_id").references(() => organizations.id).notNull(),
-  actorUserId: varchar("actor_user_id").references(() => users.id).notNull(),
-  type: varchar("type").notNull(),
+  actorUserId: varchar("actor_user_id").references(() => users.id),
+  type: varchar("type").notNull(), // 'claim_created', 'claim_submitted', 'sso_login', etc.
   details: jsonb("details").notNull(),
   ip: varchar("ip"),
   userAgent: text("user_agent"),

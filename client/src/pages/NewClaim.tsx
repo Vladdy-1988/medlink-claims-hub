@@ -1,10 +1,21 @@
 import { ClaimWizard } from "@/components/ClaimWizard";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { extractAppointmentId, prefillClaimFromAppointment } from "@/lib/ssoHandler";
 import { useLocation } from "wouter";
+import { useEffect, useState } from "react";
 
 export default function NewClaim() {
   const [, setLocation] = useLocation();
+  const [prefillData, setPrefillData] = useState<any>(null);
+
+  useEffect(() => {
+    const appointmentId = extractAppointmentId();
+    if (appointmentId) {
+      const prefill = prefillClaimFromAppointment(appointmentId);
+      setPrefillData(prefill);
+    }
+  }, []);
 
   const handleComplete = (claimId: string) => {
     setLocation(`/claims/${claimId}`);
@@ -21,7 +32,11 @@ export default function NewClaim() {
           </p>
         </div>
 
-        <ClaimWizard type="claim" onComplete={handleComplete} />
+        <ClaimWizard 
+          type="claim" 
+          onComplete={handleComplete} 
+          prefillData={prefillData}
+        />
       </div>
     </>
   );

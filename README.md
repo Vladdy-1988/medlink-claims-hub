@@ -1,233 +1,145 @@
 # MedLink Claims Hub
 
-A comprehensive healthcare claims management system built as a secure, installable PWA. Supports verified healthcare providers with role-based access, claims and pre-authorization management, file upload capabilities, offline functionality, and integration with insurance systems.
+A comprehensive healthcare claims management Progressive Web Application (PWA) designed to streamline medical claim processing and tracking for healthcare providers.
 
 ## Features
 
-- 🏥 **Healthcare Provider Management**: Role-based access control (provider, billing, admin)
-- 📋 **Claims Management**: Complete workflow from creation to payment tracking
-- 🔐 **Pre-Authorization**: Support for treatment pre-approvals
-- 📎 **File Attachments**: Secure document upload and management
-- 🌐 **Offline Support**: PWA with offline capability and sync
-- 🔌 **Insurance Integration**: Telus eClaims, CDAnet, and portal submission
-- 📊 **Dashboard & Analytics**: Real-time KPIs and performance metrics
-- 🔍 **Audit Logging**: Comprehensive compliance tracking
-- 📱 **Responsive Design**: Works on desktop, tablet, and mobile
+- **Claims Management**: Submit, track, and manage insurance claims and pre-authorizations
+- **Role-Based Access Control**: Provider, billing, and admin roles with appropriate permissions
+- **Offline Support**: Draft saving and background sync for seamless offline functionality
+- **File Attachments**: Secure file upload and management for claim documentation
+- **Real-Time Status Tracking**: Visual timeline and status updates for claim progression
+- **PWA Capabilities**: Installable app with push notifications and offline caching
+- **SSO Integration**: Marketplace deep-linking with shared-secret authentication
 
-## Tech Stack
+## Technology Stack
 
-### Frontend
-- **React 18** with TypeScript and Vite for fast development
-- **Radix UI** primitives with Tailwind CSS for consistent, accessible design
-- **TanStack React Query** for server state management and caching
-- **Wouter** for lightweight client-side routing
-- **PWA** features with service worker for offline functionality
-- **IndexedDB** integration for offline data persistence
+- **Frontend**: React with TypeScript, Vite, Tailwind CSS, Radix UI
+- **Backend**: Express.js with Node.js, TypeScript
+- **Database**: PostgreSQL with Drizzle ORM
+- **Authentication**: Replit Auth with SSO marketplace integration
+- **Storage**: Object storage for file attachments
+- **Offline**: IndexedDB for draft storage and background sync
 
-### Backend
-- **Node.js** with Express.js server framework
-- **PostgreSQL** with Drizzle ORM for type-safe database operations
-- **Replit Auth** integration with session management
-- **Object Storage** abstraction for file handling
-- **RESTful API** design with comprehensive error handling
+## SSO Marketplace Integration
 
-### Infrastructure
-- **PostgreSQL** with Neon serverless database (production) or local PostgreSQL (development)
-- **Prisma** ORM with migrations and type-safe database access
-- **Google Cloud Storage** for file attachments with Object Storage abstraction
-- **Replit** deployment platform with integrated database hosting
+MedLink Claims Hub supports deep-linking from marketplace applications using JWT-based shared-secret authentication.
 
-## Quick Start on Replit
+### Environment Configuration
 
-1. **Fork/Import this repository** to your Replit workspace
+```bash
+# Required for SSO functionality
+SSO_SHARED_SECRET=your-shared-secret-here
+ALLOWED_ORIGINS=https://mymedlink.ca,https://*.replit.dev
+```
 
-2. **Environment Setup**: The app will automatically configure required environment variables on Replit. For local development, copy `.env.example` to `.env` and configure:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+### Marketplace Integration Example
 
-3. **Install Dependencies**:
+To generate an SSO token and redirect users from your marketplace:
+
+```javascript
+const jwt = require("jsonwebtoken");
+
+// Generate SSO token
+const token = jwt.sign({
+  sub: "user123",           // Unique user ID
+  email: "user@example.com", // User email
+  name: "John Doe",         // Full name
+  orgId: "org456",          // Organization ID
+  role: "provider",         // User role (provider, billing, admin)
+  exp: Math.floor(Date.now() / 1000) + 300 // Token expires in 5 minutes
+}, process.env.SSO_SHARED_SECRET);
+
+// Redirect to Claims Hub
+window.location = `https://YOUR_CLAIMS_URL/?sso=1&token=${encodeURIComponent(token)}&next=/claims/new`;
+```
+
+### Deep-Link Prefilling
+
+Support for appointment-based claim prefilling:
+
+```javascript
+// Deep-link to claims form with appointment data
+const deepLinkUrl = `https://YOUR_CLAIMS_URL/?sso=1&token=${token}&next=/claims/new?appointmentId=apt789`;
+```
+
+The Claims Hub will automatically:
+1. Authenticate the user via SSO
+2. Create or update user/organization records
+3. Navigate to the specified page
+4. Prefill forms with appointment data if provided
+
+### SSO Authentication Flow
+
+1. **Token Generation**: Marketplace generates HS256 JWT with user/org data
+2. **Redirect**: User redirected to Claims Hub with SSO parameters
+3. **Token Verification**: Claims Hub verifies JWT signature and expiration
+4. **User/Org Upsert**: User and organization records created/updated
+5. **Session Creation**: Standard session established for continued access
+6. **Audit Logging**: SSO login event recorded with IP and user agent
+7. **Navigation**: User redirected to requested page or dashboard
+
+### Security Features
+
+- **CORS Protection**: Limited to configured allowed origins
+- **JWT Verification**: HS256 signature validation with shared secret
+- **Token Expiration**: Short-lived tokens (5 minutes recommended)
+- **Audit Logging**: All SSO logins tracked with metadata
+- **Secure Cookies**: HttpOnly, SameSite=Lax, Secure for HTTPS
+
+## Development Setup
+
+1. **Install Dependencies**:
    ```bash
    npm install
    ```
 
-4. **Database Setup**:
-   
-   **For Production (Neon PostgreSQL)**:
-   - Create a [Neon](https://neon.tech) database account
-   - Create a new project and database
-   - Copy the connection string from your Neon dashboard
-   - Set `DATABASE_URL` environment variable in Replit Secrets or your `.env` file
-   
-   **Example Neon DATABASE_URL**:
-   ```
-   postgresql://username:password@ep-example-123456.us-east-1.aws.neon.tech/medlink_claims_hub?sslmode=require
-   ```
-   
-   **Then run setup commands**:
+2. **Configure Environment**:
    ```bash
-   npx prisma generate     # Generate Prisma client
-   npx prisma migrate deploy  # Run migrations
-   npx prisma db seed      # Seed with sample data
-   ```
-   
-   **For Development**:
-   ```bash
-   npm run db:push     # Push schema changes directly
-   npm run db:seed     # Seed with sample data
+   cp .env.example .env
+   # Update .env with your database and service configurations
    ```
 
-5. **Start Development Server**:
+3. **Database Setup**:
+   ```bash
+   npm run db:push
+   ```
+
+4. **Start Development Server**:
    ```bash
    npm run dev
    ```
 
-The application will be available at the Replit URL or `http://localhost:5000` for local development.
+## Production Deployment
 
-## Available Scripts
+The application is ready for deployment on Replit or any Node.js hosting platform. Ensure all environment variables are configured:
 
-### Root Level
-- `npm run dev` - Start both web and API development servers
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run test` - Run all tests (unit + API + e2e)
-- `npm run lint` - Lint all code
-- `npm run format` - Format code with Prettier
+- `DATABASE_URL`: PostgreSQL connection string
+- `SESSION_SECRET`: Secure session encryption key
+- `SSO_SHARED_SECRET`: Shared secret for marketplace SSO
+- `ALLOWED_ORIGINS`: Comma-separated allowed CORS origins
+- `VAPID_PUBLIC_KEY` & `VAPID_PRIVATE_KEY`: Push notification keys
 
-### Web (Frontend)
-- `npm run web:dev` - Start frontend development server
-- `npm run web:build` - Build frontend for production
-- `npm run web:preview` - Preview production build
-- `npm run web:test` - Run frontend unit tests
+## API Endpoints
 
-### API (Backend)
-- `npm run api:dev` - Start backend development server with watch
-- `npm run api:build` - Build backend for production
-- `npm run api:start` - Start production backend server
-- `npm run api:test` - Run API tests
-
-### Database
-- `npx prisma generate` - Generate Prisma client from schema
-- `npx prisma migrate dev` - Create and apply new migration (development)
-- `npx prisma migrate deploy` - Apply migrations (production)
-- `npx prisma db push` - Push schema changes directly (development)
-- `npx prisma db seed` - Seed database with sample data
-- `npx prisma studio` - Open Prisma Studio database GUI
-- `npx prisma migrate reset` - Reset database and apply all migrations
-
-### Testing
-- `npm run test:unit` - Run unit tests
-- `npm run test:api` - Run API integration tests
-- `npm run test:e2e` - Run end-to-end tests
-- `npm run test:e2e:ui` - Run e2e tests with UI
-
-## Project Structure
-
-```
-├── client/                 # Frontend React application
-│   ├── public/            # Static assets
-│   ├── src/
-│   │   ├── components/    # Reusable UI components
-│   │   ├── pages/         # Page components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── lib/           # Utility functions
-│   │   └── main.tsx       # Application entry point
-│   └── index.html
-├── server/                # Backend Express application
-│   ├── integrations/      # Insurance system integrations
-│   ├── routes.ts          # API route definitions
-│   ├── storage.ts         # Database abstraction layer
-│   ├── scheduler.ts       # Background job scheduler
-│   ├── auditLogger.ts     # Compliance audit logging
-│   └── index.ts           # Server entry point
-├── shared/                # Shared TypeScript definitions
-│   └── schema.ts          # Database schema and types
-├── prisma/                # Database configuration
-│   ├── schema.prisma      # Prisma schema definition
-│   ├── migrations/        # Database migration files
-│   └── seed.ts            # Database seeding script
-├── tests/                 # Test suites
-│   ├── api/              # API integration tests
-│   ├── unit/             # Unit tests
-│   └── e2e/              # End-to-end tests
-└── package.json
-```
-
-## Key Features
+### Authentication
+- `GET /api/login` - Initiate Replit Auth login
+- `GET /api/logout` - Logout and clear session
+- `POST /auth/sso` - SSO marketplace authentication
 
 ### Claims Management
-- 3-step wizard interface for claim creation
-- Real-time status tracking and updates
-- File attachment support with auto-crop/deskew
-- Multiple submission methods (API, portal upload)
+- `GET /api/claims` - List organization claims
+- `POST /api/claims` - Create new claim
+- `GET /api/claims/:id` - Get claim details
+- `PUT /api/claims/:id` - Update claim
+- `PUT /api/claims/:id/status` - Update claim status
 
-### Insurance Integrations
-- **Telus eClaims**: Direct API integration (stub implementation with TODOs)
-- **CDAnet**: Dental claims processing (stub implementation with TODOs)
-- **Portal Upload**: Manual submission workflow tracking
-
-### Offline Functionality
-- PWA with offline claim creation
-- IndexedDB for local storage
-- Background sync when connection restored
-- Offline banner with sync status
-
-### Security & Compliance
-- Role-based access control
-- Comprehensive audit logging
-- PHI data protection and redaction
-- Session management with secure cookies
-
-### Testing
-- **Unit Tests**: Component and utility function testing
-- **API Tests**: Integration testing with Supertest
-- **E2e Tests**: Complete workflow testing with Playwright
-
-## Development Guidelines
-
-### Adding New Features
-1. Define data models in `shared/schema.ts`
-2. Create database operations in `server/storage.ts`
-3. Add API routes in `server/routes.ts`
-4. Build UI components in `client/src/components/`
-5. Add comprehensive tests
-
-### Insurance Integration
-The system includes stub implementations for major insurance providers:
-- See `server/integrations/` for implementation templates
-- Replace TODO comments with actual API integrations
-- Follow the established patterns for error handling and audit logging
-
-### Database Changes
-```bash
-# Make schema changes in shared/schema.ts
-npm run db:push    # Push to development database
-npm run db:generate # Generate migration files for production
-```
-
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with tests
-4. Run the full test suite
-5. Submit a pull request
-
-## Security Considerations
-
-- All PHI data is properly redacted in audit logs
-- File uploads are secured with object storage ACLs
-- API endpoints require authentication
-- Role-based access controls are enforced
-- Session data is encrypted and stored securely
-
-## Support
-
-For technical support or questions:
-- Check the issue tracker
-- Review the documentation
-- Contact the development team
+### Supporting Data
+- `GET /api/patients` - List organization patients
+- `GET /api/providers` - List organization providers
+- `GET /api/insurers` - List available insurers
+- `GET /api/dashboard/stats` - Dashboard KPI statistics
 
 ## License
 
-MIT License - see LICENSE file for details.
+Copyright © 2025 MedLink Claims Hub. All rights reserved.
