@@ -115,7 +115,14 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
-    const strategyName = `replitauth:${req.hostname}`;
+    // For development, always use the Replit domain strategy
+    const hostname = req.hostname === 'localhost' ? process.env.REPLIT_DOMAINS!.split(',')[0] : req.hostname;
+    const strategyName = `replitauth:${hostname}`;
+    
+    // If accessing via localhost, redirect to the proper Replit domain
+    if (req.hostname === 'localhost') {
+      return res.redirect(`https://${hostname}/api/login`);
+    }
     
     passport.authenticate(strategyName, {
       prompt: "login consent",
@@ -124,7 +131,8 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/callback", (req, res, next) => {
-    const strategyName = `replitauth:${req.hostname}`;
+    const hostname = req.hostname === 'localhost' ? process.env.REPLIT_DOMAINS!.split(',')[0] : req.hostname;
+    const strategyName = `replitauth:${hostname}`;
     
     passport.authenticate(strategyName, {
       successReturnToOrRedirect: "/",
