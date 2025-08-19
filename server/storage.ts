@@ -186,9 +186,7 @@ export class DatabaseStorage implements IStorage {
     return org;
   }
 
-  async getPatients(orgId: string): Promise<Patient[]> {
-    return await db.select().from(patients).where(eq(patients.orgId, orgId));
-  }
+
 
   async getPatient(id: string): Promise<Patient | undefined> {
     const [patient] = await db.select().from(patients).where(eq(patients.id, id));
@@ -200,9 +198,7 @@ export class DatabaseStorage implements IStorage {
     return patient;
   }
 
-  async getProviders(orgId: string): Promise<Provider[]> {
-    return await db.select().from(providers).where(eq(providers.orgId, orgId));
-  }
+
 
   async getProvider(id: string): Promise<Provider | undefined> {
     const [provider] = await db.select().from(providers).where(eq(providers.id, id));

@@ -5,7 +5,7 @@
 
 import { BaseConnector, SubmitResult, PollResult } from './base';
 import { ConnectorError } from '../lib/errors';
-import { mapClaimToEClaims, parseEClaimsResponse, generateTokenRequest, validateTokenResponse } from '../mappers/eclaims';
+import { mapClaimToEClaims, parseEClaimsResponse } from '../mappers/eclaims';
 import { simulateEClaimsResponse, simulateProcessingDelay, validateSandboxToken, generateSandboxToken } from '../sandbox/carrier-sim';
 import { db } from '../db';
 import { patients, providers } from '../../shared/schema';
