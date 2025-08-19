@@ -48,12 +48,12 @@ export async function getConnector(
   // Import connector implementations dynamically
   switch (name) {
     case 'cdanet': {
-      const { CDAnetITransConnector } = await import('./cdanet-itrans');
-      return new CDAnetITransConnector(orgId);
+      const module = await import('./cdanet-itrans.js');
+      return new module.CDAnetITransConnector(orgId);
     }
     case 'eclaims': {
-      const { TelusEClaimsConnector } = await import('./telus-eclaims');
-      return new TelusEClaimsConnector(orgId);
+      const module = await import('./telus-eclaims.js');
+      return new module.TelusEClaimsConnector(orgId);
     }
     case 'portal': {
       const { PortalConnector } = await import('./portal');
