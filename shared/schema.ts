@@ -121,6 +121,7 @@ export const claims = pgTable("claims", {
   codes: jsonb("codes"), // procedure codes
   notes: text("notes"),
   referenceNumber: varchar("reference_number"),
+  externalId: varchar("external_id"), // EDI connector external reference
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -154,6 +155,47 @@ export const auditEvents = pgTable("audit_events", {
   details: jsonb("details").notNull(),
   ip: varchar("ip"),
   userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// EDI Connector Tables
+export const connectorModeEnum = pgEnum("connector_mode", ["live", "sandbox"]);
+export const connectorNameEnum = pgEnum("connector_name", ["cdanet", "eclaims", "portal"]);
+export const transactionTypeEnum = pgEnum("transaction_type", ["submit", "poll", "error"]);
+
+export const connectorConfigs = pgTable("connector_configs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: uuid("org_id").references(() => organizations.id).notNull(),
+  name: connectorNameEnum("name").notNull(),
+  enabled: boolean("enabled").default(false),
+  mode: connectorModeEnum("mode").default("sandbox"),
+  settings: jsonb("settings"), // connector-specific settings
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  // Unique constraint on orgId + name
+  index("unique_org_connector").on(table.orgId, table.name),
+]);
+
+export const connectorTransactions = pgTable("connector_transactions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  claimId: uuid("claim_id").references(() => claims.id).notNull(),
+  connector: connectorNameEnum("connector").notNull(),
+  type: transactionTypeEnum("type").notNull(),
+  externalId: varchar("external_id"), // external system reference
+  status: varchar("status").notNull(), // pending, submitted, paid, denied, error
+  payload: jsonb("payload"), // request/response data
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const connectorErrors = pgTable("connector_errors", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  transactionId: uuid("transaction_id").references(() => connectorTransactions.id).notNull(),
+  code: varchar("code").notNull(), // error taxonomy code
+  message: text("message").notNull(),
+  category: varchar("category").notNull(), // VALIDATION_ERROR, NETWORK_ERROR, etc.
+  details: jsonb("details"), // additional error context
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -206,6 +248,23 @@ export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions
   updatedAt: true,
 });
 
+export const insertConnectorConfigSchema = createInsertSchema(connectorConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertConnectorTransactionSchema = createInsertSchema(connectorTransactions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertConnectorErrorSchema = createInsertSchema(connectorErrors).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -229,3 +288,11 @@ export type InsertClaim = z.infer<typeof insertClaimSchema>;
 export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
 export type InsertRemittance = z.infer<typeof insertRemittanceSchema>;
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
+
+// EDI Connector Types
+export type ConnectorConfig = typeof connectorConfigs.$inferSelect;
+export type InsertConnectorConfig = z.infer<typeof insertConnectorConfigSchema>;
+export type ConnectorTransaction = typeof connectorTransactions.$inferSelect;
+export type InsertConnectorTransaction = z.infer<typeof insertConnectorTransactionSchema>;
+export type ConnectorError = typeof connectorErrors.$inferSelect;
+export type InsertConnectorError = z.infer<typeof insertConnectorErrorSchema>;

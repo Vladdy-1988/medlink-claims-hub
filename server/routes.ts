@@ -5,7 +5,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
-import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, insertPushSubscriptionSchema } from "@shared/schema";
+import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, insertPushSubscriptionSchema, insertConnectorConfigSchema } from "@shared/schema";
 import { z } from "zod";
 import { PushNotificationService } from "./pushService";
 import { handleSSOLogin, configureCORS } from "./ssoAuth";
@@ -439,13 +439,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Connector endpoints (stubs)
+  // EDI Connector API Routes
   app.post('/api/connectors/submit', isAuthenticated, async (req: any, res) => {
     try {
-      const { claimId, rail } = req.body;
+      const { claimId, connector } = req.body;
       
-      if (!claimId || !rail) {
-        return res.status(400).json({ message: "claimId and rail are required" });
+      if (!claimId || !connector) {
+        return res.status(400).json({ message: "claimId and connector are required" });
+      }
+
+      // Validate connector type
+      if (!['cdanet', 'eclaims', 'portal'].includes(connector)) {
+        return res.status(400).json({ message: "Invalid connector type" });
+      }
+
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId) {
+        return res.status(400).json({ message: "User not associated with organization" });
+      }
+
+      // RBAC: provider can submit own org; billing/admin all org
+      const claim = await storage.getClaim(claimId);
+      if (!claim) {
+        return res.status(404).json({ message: "Claim not found" });
+      }
+
+      if (claim.orgId !== user.orgId && !['billing', 'admin'].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      // Import job queue dynamically to avoid circular dependencies
+      const { jobQueue } = await import('./lib/jobs');
+      
+      // Enqueue job
+      const jobId = await jobQueue.enqueue({
+        type: 'submit',
+        claimId,
+        connector: connector as any,
+      });
+
+      await auditLog(req, 'claim_submission_queued', { claimId, connector, jobId });
+
+      res.json({ 
+        queued: true, 
+        jobId,
+        message: `Claim queued for submission via ${connector}` 
+      });
+    } catch (error) {
+      console.error("Error queuing claim submission:", error);
+      res.status(500).json({ message: "Failed to queue claim submission" });
+    }
+  });
+
+  // Get connector status for claim
+  app.get('/api/connectors/:claimId/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const { claimId } = req.params;
+      
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId) {
+        return res.status(400).json({ message: "User not associated with organization" });
       }
 
       const claim = await storage.getClaim(claimId);
@@ -453,24 +506,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Claim not found" });
       }
 
-      // Simulate submission to external system
-      const referenceNumber = `${rail.toUpperCase()}-${Date.now()}`;
-      
-      await storage.updateClaim(claimId, {
-        status: 'submitted',
-        referenceNumber,
-      });
+      if (claim.orgId !== user.orgId && !['billing', 'admin'].includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
 
-      await auditLog(req, 'claim_submitted', { claimId, rail, referenceNumber });
+      // Get latest connector event
+      const events = await storage.getConnectorEvents(claimId);
+      const lastEvent = events[0]; // Most recent event
 
-      res.json({ 
-        success: true, 
-        referenceNumber,
-        message: `Claim submitted via ${rail}` 
+      res.json({
+        claimId,
+        status: claim.status,
+        externalId: claim.externalId,
+        lastSync: lastEvent?.createdAt,
+        lastEvent: lastEvent ? {
+          type: lastEvent.type,
+          connector: lastEvent.connector,
+          payload: lastEvent.payload,
+        } : null,
       });
     } catch (error) {
-      console.error("Error submitting claim:", error);
-      res.status(500).json({ message: "Failed to submit claim" });
+      console.error("Error fetching connector status:", error);
+      res.status(500).json({ message: "Failed to fetch connector status" });
+    }
+  });
+
+  // Admin: Configure connectors
+  app.post('/api/admin/connectors/config', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId || user.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const validatedData = insertConnectorConfigSchema.parse({
+        ...req.body,
+        orgId: user.orgId,
+      });
+
+      const config = await storage.upsertConnectorConfig(validatedData);
+      
+      await auditLog(req, 'connector_config_updated', { 
+        connectorName: config.name, 
+        enabled: config.enabled,
+        mode: config.mode 
+      });
+
+      res.json(config);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("Error updating connector config:", error);
+      res.status(500).json({ message: "Failed to update connector config" });
+    }
+  });
+
+  // Admin: Test connector dry-run
+  app.post('/api/connectors/test', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId || user.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const { claimId, connector } = req.body;
+      
+      if (!claimId || !connector) {
+        return res.status(400).json({ message: "claimId and connector are required" });
+      }
+
+      const claim = await storage.getClaim(claimId);
+      if (!claim) {
+        return res.status(404).json({ message: "Claim not found" });
+      }
+
+      // Get connector instance and validate only (dry-run)
+      const { getConnector } = await import('./connectors/base');
+      const connectorInstance = await getConnector(connector as any, user.orgId);
+      
+      await connectorInstance.validate(claim);
+
+      // Return mapped payload (with PHI redacted for logs)
+      let mappedPayload: any = {};
+      
+      if (connector === 'cdanet') {
+        const { mapClaimToCDAnet } = await import('./mappers/cdanet');
+        const [patient] = await storage.getPatients(user.orgId, { id: claim.patientId });
+        const [provider] = await storage.getProviders(user.orgId, { id: claim.providerId });
+        
+        if (patient && provider) {
+          mappedPayload = mapClaimToCDAnet(claim, patient, provider);
+        }
+      } else if (connector === 'eclaims') {
+        const { mapClaimToEClaims } = await import('./mappers/eclaims');
+        const [patient] = await storage.getPatients(user.orgId, { id: claim.patientId });
+        const [provider] = await storage.getProviders(user.orgId, { id: claim.providerId });
+        
+        if (patient && provider) {
+          mappedPayload = mapClaimToEClaims(claim, patient, provider);
+        }
+      }
+
+      await auditLog(req, 'connector_test_run', { claimId, connector });
+
+      res.json({
+        valid: true,
+        connector,
+        mappedPayload,
+        message: `Claim validation successful for ${connector}`,
+      });
+
+    } catch (error) {
+      console.error("Error testing connector:", error);
+      res.status(500).json({ 
+        valid: false,
+        message: error.message || "Connector test failed" 
+      });
     }
   });
 

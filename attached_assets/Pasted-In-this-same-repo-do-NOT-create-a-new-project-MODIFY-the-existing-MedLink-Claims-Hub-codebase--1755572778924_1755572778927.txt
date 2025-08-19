@@ -1,0 +1,139 @@
+In this same repo, do NOT create a new project; MODIFY the existing MedLink Claims Hub codebase.
+
+Goal: Add EDI connector architecture for (1) CDAnet via ITRANS and (2) TELUS eClaims with a SANDBOX-FIRST implementation (no real transmissions yet). Include: environment variables, a job queue, error taxonomy, request/response mappers, admin config, and tests. Do NOT remove existing features or break auth/PWA.
+
+--- 1) ENV & CONFIG ---
+Add these env vars to `.env.example` (DO NOT hardcode secrets):
+# Common
+CONNECTORS_MODE=sandbox   # sandbox | live
+CONNECTOR_LOG_LEVEL=info  # debug|info|warn|error
+JOB_CONCURRENCY=3
+# CDAnet / ITRANS
+ITRANS_ENABLED=false
+ITRANS_OFFICE_NUMBER=
+ITRANS_PROVIDER_NUMBER=
+ITRANS_CERT_PATH=
+ITRANS_CERT_PASSPHRASE=
+ITRANS_ENDPOINT=https://sandbox.itrans.example
+# TELUS eClaims
+ECLAIMS_ENABLED=false
+ECLAIMS_CLIENT_ID=
+ECLAIMS_CLIENT_SECRET=
+ECLAIMS_ENDPOINT=https://sandbox.eclaims.example
+
+--- 2) DATA MODEL (Prisma) ---
+Extend Prisma schema with:
+- ConnectorConfig(id, orgId, name: 'cdanet'|'eclaims', enabled Boolean, mode 'sandbox'|'live', settings Json, createdAt, updatedAt)
+- ConnectorEvent(id, orgId, claimId, connector 'cdanet'|'eclaims'|'portal', type 'submit'|'status'|'error', payload Json, createdAt)
+- Job(id, type 'submit'|'poll-status', status 'queued'|'running'|'succeeded'|'failed', claimId?, connector?, attempts, lastError?, scheduledAt, createdAt, updatedAt)
+Migrate and keep existing tables intact.
+
+--- 3) JOB QUEUE SERVICE ---
+Create `/apps/api/src/lib/jobs.ts`:
+- In-memory queue with persistence to Prisma.Job (no Redis). API: enqueue(job), worker(start), backoff (exp: 2^n * 2s), maxAttempts=5, concurrency=process.env.JOB_CONCURRENCY.
+- Workers:
+  - 'submit': loads claim + connector, calls adapter.submitClaim()
+  - 'poll-status': calls adapter.pollStatus(externalId) and updates Claim.status
+- Record ConnectorEvent on each step.
+
+Add server bootstrap to start workers (only once per process).
+
+--- 4) ERROR TAXONOMY ---
+Create `/apps/api/src/lib/errors.ts` with:
+export type ConnectorErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'AUTH_ERROR'
+  | 'TRANSPORT_ERROR'
+  | 'TIMEOUT'
+  | 'RATE_LIMIT'
+  | 'PAYER_REJECT'
+  | 'DUPLICATE'
+  | 'UNKNOWN';
+
+export class ConnectorError extends Error {
+  code: ConnectorErrorCode;
+  details?: any;
+  constructor(code: ConnectorErrorCode, message: string, details?: any) { ... }
+}
+Provide helpers: classifyHttpError(), shouldRetry(code) (retry on TRANSPORT/TIMEOUT/RATE_LIMIT, not on VALIDATION/PAYER_REJECT/DUPLICATE).
+
+--- 5) CONNECTOR INTERFACE & ADAPTERS ---
+Create `/apps/api/src/connectors/base.ts`:
+export interface SubmitResult { externalId: string; status: 'submitted'|'error'; message?: string; raw?: any }
+export interface PollResult { status: 'pending'|'infoRequested'|'paid'|'denied'; payload?: any }
+export interface Connector {
+  validate(claim: any): Promise<void>;
+  submitClaim(claim: any): Promise<SubmitResult>;
+  pollStatus(externalId: string): Promise<PollResult>;
+}
+export function getConnector(name:'cdanet'|'eclaims'|'portal', orgId:string): Connector { ... } // reads ConnectorConfig + env
+
+Mappers in `/apps/api/src/mappers/`:
+- `cdanet.ts`: export mapClaimToCDAnet(claim, patient, provider) -> { segments: string[] } and parseCDAnetResponse(raw) -> { status, details }
+- `eclaims.ts`: export mapClaimToEClaims(...) and parseEClaimsResponse(...)
+
+Adapters:
+- `/apps/api/src/connectors/cdanet-itrans.ts`:
+  - validate(): ensure provider/license, codes, patient DOB, etc.; throw ConnectorError('VALIDATION_ERROR', ...)
+  - submitClaim(): if CONNECTORS_MODE==='sandbox' => simulate request (delay 800ms) and return { externalId: 'ITRANS-SBX-'+claim.id, status:'submitted', raw:{ack:'AA'} }. If 'live' => placeholder TODO with clear comments where ITRANS SDK/API call would go.
+  - pollStatus(): sandbox cycles pending→paid or infoRequested based on seeded rules; live => TODO.
+- `/apps/api/src/connectors/telus-eclaims.ts`:
+  - Similar to above, with OAuth token stub for sandbox; live => TODO with clear endpoints placeholders.
+
+Keep existing `portal.ts` as-is; register it in `getConnector()`.
+
+--- 6) API ROUTES ---
+Add/extend Express routes:
+- POST `/connectors/submit` { claimId, connector }:
+  - RBAC: provider can submit own org; billing/admin all org
+  - Enqueue Job(type:'submit', claimId, connector)
+  - Return { queued:true, jobId }
+- GET `/connectors/:claimId/status`:
+  - Return current Claim.status + externalId + last ConnectorEvent
+- POST `/admin/connectors/config` (admin): upsert ConnectorConfig for org { name, enabled, mode, settings }
+- POST `/connectors/test` (admin): dry-run validate+map for a given claim and connector; returns mapped payload (redact PHI in logs)
+
+Scheduler:
+- Every 60s enqueue poll-status jobs for claims with externalId and status in ['submitted','pending','infoRequested'].
+
+--- 7) FRONTEND (minimal UI to configure & view) ---
+In Settings page, add a "Connectors" tab:
+- Cards for CDAnet/ITRANS and TELUS eClaims showing: Enabled toggle, Mode (sandbox/live) select, minimal settings form (clientId/secret for eClaims, office/provider for ITRANS). Save → calls `/admin/connectors/config`.
+- On Claim Detail page: show connector name, externalId (if any), last sync time, and a "Recheck Status" button (fires poll-status enqueue).
+
+Disable rails in the New Claim wizard if the connector is disabled.
+
+--- 8) SANDBOX INSURER SIMULATOR ---
+Create `/apps/api/src/sandbox/carrier-sim.ts` with deterministic behavior:
+- For CDAnet sandbox: if total amount ends with .00 → approve (paid), if .13 → infoRequested, if .99 → denied; else pending.
+- For eClaims sandbox: similar rules + simple token check.
+Adapters call into this simulator when CONNECTORS_MODE==='sandbox'.
+
+--- 9) LOGGING & AUDIT ---
+- On each submit/poll, write ConnectorEvent with payload (redact patient name/id—store as hashed).
+- Add debug logs behind CONNECTOR_LOG_LEVEL=debug.
+
+--- 10) TESTS ---
+Unit/API (Supertest):
+- POST /connectors/submit with a seeded claim → 200 + job queued.
+- Worker runs submit → Claim gets externalId and status 'submitted'.
+- Poll once → status changes according to sandbox rules.
+RBAC:
+- Provider cannot call /admin/connectors/config; admin can.
+Mapper tests:
+- mapClaimToCDAnet() returns essential segments; parse functions handle sandbox payloads.
+
+Playwright e2e:
+- Login → create claim (portal is fine) → switch connector to 'cdanet' on claim (or create via cdanet) → click "Submit via Connector" → see status 'submitted' → run a "Recheck Status" and observe state transition per sandbox rule.
+
+--- 11) ACCEPTANCE CRITERIA ---
+- Env vars present and documented.
+- Prisma migration adds Job, ConnectorConfig, ConnectorEvent without breaking existing data.
+- Queue works in-process with persistence and backoff; jobs visible in logs.
+- /connectors/submit enqueues and transitions claim to 'submitted' with externalId in sandbox.
+- Polling updates claim to 'paid'|'denied'|'infoRequested' per simulator rules.
+- Settings → Connectors tab saves and reflects org config; rails disabled when connector disabled.
+- Tests: unit/API pass; e2e passes happy path.
+- No real EDI calls in sandbox; live code clearly marked as TODO with safe guards.
+
+Keep PWA/auth untouched. Keep all existing routes working. Produce concise README notes: env vars, how the sandbox behaves, and how to test locally.

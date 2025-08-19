@@ -9,6 +9,9 @@ import {
   attachments,
   remittances,
   auditEvents,
+  connectorConfigs,
+  connectorTransactions,
+  connectorErrors,
   type User,
   type UpsertUser,
   type Organization,
@@ -20,6 +23,9 @@ import {
   type Attachment,
   type Remittance,
   type AuditEvent,
+  type ConnectorConfig,
+  type ConnectorTransaction,
+  type ConnectorError,
   type InsertUser,
   type InsertOrganization,
   type InsertPatient,
@@ -28,6 +34,9 @@ import {
   type InsertAttachment,
   type InsertRemittance,
   type InsertAuditEvent,
+  type InsertConnectorConfig,
+  type InsertConnectorTransaction,
+  type InsertConnectorError,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
@@ -89,6 +98,18 @@ export interface IStorage {
     successRate: number;
     monthlyRevenue: number;
   }>;
+
+  // EDI Connector operations
+  upsertConnectorConfig(config: InsertConnectorConfig): Promise<ConnectorConfig>;
+  getConnectorConfig(orgId: string, name: string): Promise<ConnectorConfig | undefined>;
+  createConnectorTransaction(transaction: InsertConnectorTransaction): Promise<ConnectorTransaction>;
+  updateConnectorTransaction(id: string, updates: Partial<ConnectorTransaction>): Promise<ConnectorTransaction | undefined>;
+  createConnectorError(error: InsertConnectorError): Promise<ConnectorError>;
+  getConnectorEvents(claimId: string): Promise<ConnectorTransaction[]>;
+
+  // Enhanced methods for EDI requirements
+  getPatients(orgId: string, filter?: { id?: string }): Promise<Patient[]>;
+  getProviders(orgId: string, filter?: { id?: string }): Promise<Provider[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -338,6 +359,95 @@ export class DatabaseStorage implements IStorage {
         updatedAt: new Date(),
       })
       .where(eq(claims.id, id));
+  }
+
+  // EDI Connector operations implementation
+  async upsertConnectorConfig(config: InsertConnectorConfig): Promise<ConnectorConfig> {
+    const [result] = await db
+      .insert(connectorConfigs)
+      .values(config)
+      .onConflictDoUpdate({
+        target: [connectorConfigs.orgId, connectorConfigs.name],
+        set: {
+          enabled: config.enabled,
+          mode: config.mode,
+          settings: config.settings,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async getConnectorConfig(orgId: string, name: string): Promise<ConnectorConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(connectorConfigs)
+      .where(and(
+        eq(connectorConfigs.orgId, orgId),
+        eq(connectorConfigs.name, name)
+      ));
+    return config;
+  }
+
+  async createConnectorTransaction(transaction: InsertConnectorTransaction): Promise<ConnectorTransaction> {
+    const [result] = await db
+      .insert(connectorTransactions)
+      .values(transaction)
+      .returning();
+    return result;
+  }
+
+  async updateConnectorTransaction(id: string, updates: Partial<ConnectorTransaction>): Promise<ConnectorTransaction | undefined> {
+    const [result] = await db
+      .update(connectorTransactions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(connectorTransactions.id, id))
+      .returning();
+    return result;
+  }
+
+  async createConnectorError(error: InsertConnectorError): Promise<ConnectorError> {
+    const [result] = await db
+      .insert(connectorErrors)
+      .values(error)
+      .returning();
+    return result;
+  }
+
+  async getConnectorEvents(claimId: string): Promise<ConnectorTransaction[]> {
+    return await db
+      .select()
+      .from(connectorTransactions)
+      .where(eq(connectorTransactions.claimId, claimId))
+      .orderBy(desc(connectorTransactions.createdAt));
+  }
+
+  // Enhanced methods for EDI requirements
+  async getPatients(orgId: string, filter?: { id?: string }): Promise<Patient[]> {
+    const conditions = [eq(patients.orgId, orgId)];
+    if (filter?.id) {
+      conditions.push(eq(patients.id, filter.id));
+    }
+    
+    return await db
+      .select()
+      .from(patients)
+      .where(and(...conditions))
+      .orderBy(asc(patients.name));
+  }
+
+  async getProviders(orgId: string, filter?: { id?: string }): Promise<Provider[]> {
+    const conditions = [eq(providers.orgId, orgId)];
+    if (filter?.id) {
+      conditions.push(eq(providers.id, filter.id));
+    }
+    
+    return await db
+      .select()
+      .from(providers)
+      .where(and(...conditions))
+      .orderBy(asc(providers.name));
   }
 }
 
