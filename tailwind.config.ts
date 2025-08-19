@@ -5,10 +5,19 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        xl: "1rem",
+        "2xl": "1.25rem",
+      },
+      boxShadow: {
+        soft: "0 2px 15px -3px rgba(0, 0, 0, 0.07), 0 10px 20px -2px rgba(0, 0, 0, 0.04)",
+        "soft-lg": "0 10px 35px -5px rgba(0, 0, 0, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.04)",
       },
       colors: {
         background: "var(--background)",
@@ -24,10 +33,43 @@ export default {
         primary: {
           DEFAULT: "var(--primary)",
           foreground: "var(--primary-foreground)",
+          50: "rgb(240 253 250)",
+          100: "rgb(204 251 241)",
+          200: "rgb(153 246 228)",
+          300: "rgb(94 234 212)",
+          400: "rgb(45 212 191)",
+          500: "rgb(20 184 166)",
+          600: "rgb(13 148 136)",
+          700: "rgb(15 118 110)",
+          800: "rgb(17 94 89)",
+          900: "rgb(19 78 74)",
         },
         secondary: {
           DEFAULT: "var(--secondary)",
           foreground: "var(--secondary-foreground)",
+          50: "rgb(240 249 255)",
+          100: "rgb(224 242 254)",
+          200: "rgb(186 230 253)",
+          300: "rgb(125 211 252)",
+          400: "rgb(56 189 248)",
+          500: "rgb(14 165 233)",
+          600: "rgb(2 132 199)",
+          700: "rgb(3 105 161)",
+          800: "rgb(7 89 133)",
+          900: "rgb(12 74 110)",
+        },
+        brand: {
+          DEFAULT: "var(--brand)",
+          50: "rgb(240 253 250)",
+          100: "rgb(204 251 241)",
+          200: "rgb(153 246 228)",
+          300: "rgb(94 234 212)",
+          400: "rgb(45 212 191)",
+          500: "rgb(20 184 166)",
+          600: "rgb(13 148 136)",
+          700: "rgb(15 118 110)",
+          800: "rgb(17 94 89)",
+          900: "rgb(19 78 74)",
         },
         muted: {
           DEFAULT: "var(--muted)",
@@ -62,11 +104,7 @@ export default {
           ring: "var(--sidebar-ring)",
         },
       },
-      fontFamily: {
-        sans: ["var(--font-sans)"],
-        serif: ["var(--font-serif)"],
-        mono: ["var(--font-mono)"],
-      },
+
       keyframes: {
         "accordion-down": {
           from: {

@@ -75,7 +75,7 @@ export default function Claims() {
           </CardHeader>
           <CardContent>
             <ClaimsTable 
-              claims={claims || []}
+              claims={Array.isArray(claims) ? claims : []}
               isLoading={claimsLoading}
               data-testid="claims-table"
             />

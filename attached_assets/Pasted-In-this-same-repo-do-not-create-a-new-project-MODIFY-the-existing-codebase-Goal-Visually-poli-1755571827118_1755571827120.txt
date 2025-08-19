@@ -1,0 +1,78 @@
+In this same repo, do not create a new project; MODIFY the existing codebase.
+
+Goal: Visually polish MedLink Claims Hub using Tailwind + Radix UI primitives so it looks clean, modern, and medical-grade. Keep all functionality, routes, APIs, tests, and PWA behavior intact.
+
+Constraints:
+- NO breaking changes to auth, APIs, data, or service worker.
+- Keep all pages and flows; this is a styling/UX pass.
+- Use Tailwind + Radix primitives + lucide-react icons (if not installed, add).
+- Maintain accessibility (labels, aria-*, focus states, contrast).
+
+1) Design tokens & theming
+- Tailwind: add a small design system in tailwind.config:
+  - fontFamily: Inter, system sans
+  - radius: xl: "1rem", "2xl": "1.25rem"
+  - shadows: soft cards
+  - colors: create aliases for brand using Tailwind’s teal/sky/slate:
+    primary = teal (500/600/700), secondary = sky, muted = slate
+- Global CSS: define CSS variables for light/dark themes:
+  :root { --bg: 255 255 255; --fg: 15 23 42; --card: 248 250 252; --brand: 20 184 166; }
+  .dark { --bg: 2 6 23; --fg: 226 232 240; --card: 15 23 42; }
+  Use these via Tailwind’s arbitrary colors (e.g., bg-[rgb(var(--bg))]).
+- index.html: add Inter via Google Fonts (display=swap) and set <meta name="theme-color"> to brand color for PWA.
+
+2) App shell & navigation
+- Create reusable <AppShell> with:
+  - Topbar: logo “MedLink Claims” (lucide Stethoscope), global search, dark-mode toggle, user menu.
+  - Sidebar: icons + labels for Dashboard, Claims, Pre-Auths, Remittances, Settings, Admin (if role=admin).
+  - Responsive: collapsible sidebar on mobile.
+- Persist dark/light preference in localStorage and respect prefers-color-scheme.
+
+3) Reusable UI components (in /apps/web/src/components)
+- <Card>, <Button>, <Input>, <Select>, <Label>, <Badge>, <Tabs>, <Table>, <Modal>, <Toast>, <Skeleton>, <EmptyState>, <Stepper>, <Timeline>
+- Style: rounded-2xl, soft shadows, subtle borders, generous spacing (p-6), hover/active states, focus-visible rings.
+- Status badges: draft (slate), submitted (sky), pending (amber), infoRequested (violet), paid (emerald), denied (rose).
+- FileUpload: nicer dropzone (dashed border + icon + helper text).
+
+4) Page polish
+- Dashboard (/): 2-col responsive grid: KPI cards (Draft / Submitted / Pending / Paid / Denied) with small trend sparkline; “New Pre-Auth” and “New Claim” primary buttons.
+- Claims (/claims): 
+  - Sticky table header, zebra rows, column sorting, filter chips (status, payer) above table, search input.
+  - Empty state: icon + CTA to create first claim.
+- New Claim (/claims/new): 3-step wizard with <Stepper> (Patient → Services/Codes → Attachments & Submit).
+  - Autosave indicator (“Saved • 3s ago”) and subtle progress bar.
+  - Primary “Submit” button, secondary “Save draft”.
+- Claim Detail (/claims/:id): 
+  - Header card with claim id, patient, payer, amount, status badge + actions (Download PDF, Add Note).
+  - <Timeline> right rail (Created → Submitted → Pending → Info Requested → Paid/Denied) with icons.
+  - Attachments card with previews and file meta; drag-to-upload zone.
+- Pre-Auths (/preauths/new): same polish as claim wizard (shorter form).
+- Remittances (/remittances): cards list; detail view shows parsed fields and a “Raw JSON” toggle.
+- OfflineBanner: convert to a slim top bar with cloud-slash icon + clear message.
+
+5) Accessibility & micro-interactions
+- Ensure all interactive elements have focus-visible rings (ring-brand/40).
+- Add subtle transitions (transition-all duration-150) and reduced-motion safe guards.
+- Tooltip help icons (Radix Tooltip) for tricky fields (procedure codes, rails).
+- Keep contrast AA+ in both themes.
+
+6) Icons & visuals
+- Use lucide-react icons: LayoutDashboard, FileText, ScanLine, FileCheck2, Settings, ShieldCheck, Moon, Sun, CloudOff, BadgeCheck, XCircle.
+- Replace plain text status with badge + icon.
+
+7) Tests & PWA
+- Update tests/selectors if class names changed; keep semantics stable (data-testid where needed).
+- Do NOT change service worker scope or manifest except theme-color and icons if required.
+
+8) Acceptance criteria
+- Visual polish applied to all pages above.
+- Dark mode toggle works and persists.
+- Table has sticky header, filters, and good spacing.
+- Wizards show stepper + autosave indicator.
+- Timeline renders with icons and correct statuses.
+- No changes to business logic; all existing flows continue to pass.
+- Lighthouse (desktop) performance ≥ 90, accessibility ≥ 95, best practices ≥ 95.
+
+Deliverables:
+- Updated Tailwind config, global CSS, AppShell, components, and refactored pages.
+- Minimal README note: “UI polish pass + how to change brand colors.”

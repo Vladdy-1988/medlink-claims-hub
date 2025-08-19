@@ -3,6 +3,8 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
+import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/hooks/useAuth";
 import { handleSSOLogin } from "@/lib/ssoHandler";
 import { useEffect } from "react";
@@ -17,7 +19,6 @@ import NewPreAuth from "@/pages/NewPreAuth";
 import Remittances from "@/pages/Remittances";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
-import Layout from "@/components/Layout";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -50,7 +51,7 @@ function Router() {
 
   return (
     <Switch>
-      <Layout>
+      <AppShell>
         <Route path="/" component={Dashboard} />
         <Route path="/claims" component={Claims} />
         <Route path="/claims/new" component={NewClaim} />
@@ -59,7 +60,7 @@ function Router() {
         <Route path="/remittances" component={Remittances} />
         <Route path="/settings" component={Settings} />
         <Route path="/admin" component={Admin} />
-      </Layout>
+      </AppShell>
       <Route component={NotFound} />
       <InstallPrompt />
     </Switch>
@@ -69,10 +70,12 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <ThemeProvider defaultTheme="system" storageKey="medlink-ui-theme">
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

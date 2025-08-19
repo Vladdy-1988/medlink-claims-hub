@@ -5,11 +5,11 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DashboardKpis, createDashboardKpis } from "@/components/DashboardKpis";
+import { DashboardKpis } from "@/components/DashboardKpis";
 import { ClaimsTable } from "@/components/ClaimsTable";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { Plus, CheckCircle, Upload } from "lucide-react";
-import StatusBadge from "@/components/StatusBadge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Link } from "wouter";
 
 interface DashboardStats {
@@ -142,12 +142,12 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <ul className="-my-5 divide-y divide-slate-200">
-                    {(!recentClaims || recentClaims.length === 0) ? (
+                    {(!recentClaims || (Array.isArray(recentClaims) && recentClaims.length === 0)) ? (
                       <li className="py-4 text-center text-slate-500">
                         No claims found. <Link href="/claims/new" className="text-primary-600 hover:underline">Create your first claim</Link>
                       </li>
                     ) : (
-                      recentClaims.slice(0, 3).map((claim: any) => (
+                      (Array.isArray(recentClaims) ? recentClaims : []).slice(0, 3).map((claim: any) => (
                         <li key={claim.id} className="py-4" data-testid={`recent-claim-${claim.id}`}>
                           <div className="flex items-center space-x-4">
                             <div className="flex-shrink-0">

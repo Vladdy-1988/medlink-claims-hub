@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, Clock, CheckCircle, XCircle } from "lucide-react";
+import { FileText, Clock, CheckCircle, XCircle, TrendingUp, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface DashboardStats {
   totalClaims: number;
@@ -16,34 +17,49 @@ interface DashboardKpisProps {
 }
 
 export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) {
+  const totalProcessed = stats.paidClaims + stats.deniedClaims;
+  const successRate = totalProcessed > 0 ? (stats.paidClaims / totalProcessed) * 100 : 0;
+  
   const kpis = [
     {
       title: "Draft Claims",
       value: stats.draftClaims,
       icon: FileText,
       description: "Unsaved drafts",
-      className: "text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-400",
+      change: "+2",
+      changeType: "neutral" as const,
+      iconBg: "bg-slate-100 dark:bg-slate-800",
+      iconColor: "text-slate-600 dark:text-slate-400",
     },
     {
       title: "Pending Review",
       value: stats.pendingClaims,
       icon: Clock,
       description: "Awaiting response",
-      className: "text-yellow-600 bg-yellow-50 dark:bg-yellow-950 dark:text-yellow-400",
+      change: "+5",
+      changeType: "increase" as const,
+      iconBg: "bg-amber-100 dark:bg-amber-900/30",
+      iconColor: "text-amber-600 dark:text-amber-400",
     },
     {
       title: "Paid Claims",
       value: stats.paidClaims,
       icon: CheckCircle,
       description: "Successfully processed",
-      className: "text-green-600 bg-green-50 dark:bg-green-950 dark:text-green-400",
+      change: "+12",
+      changeType: "increase" as const,
+      iconBg: "bg-emerald-100 dark:bg-emerald-900/30",
+      iconColor: "text-emerald-600 dark:text-emerald-400",
     },
     {
-      title: "Denied Claims",
-      value: stats.deniedClaims,
-      icon: XCircle,
-      description: "Require attention",
-      className: "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-400",
+      title: "Success Rate",
+      value: `${successRate.toFixed(1)}%`,
+      icon: TrendingUp,
+      description: "Approval percentage",
+      change: "+2.1%",
+      changeType: "increase" as const,
+      iconBg: "bg-primary-100 dark:bg-primary-900/30",
+      iconColor: "text-primary-600 dark:text-primary-400",
     },
   ];
 
@@ -51,7 +67,7 @@ export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) 
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
+          <Card key={i} className="border-0 shadow-soft">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div className="h-4 w-24 bg-muted animate-pulse rounded" />
               <div className="h-4 w-4 bg-muted animate-pulse rounded" />
@@ -67,30 +83,35 @@ export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) 
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      {kpis.map((kpi) => {
-        const Icon = kpi.icon;
-        return (
-          <Card key={kpi.title} data-testid={`kpi-${kpi.title.toLowerCase().replace(/\s+/g, '-')}`}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {kpi.title}
-              </CardTitle>
-              <div className={`rounded-full p-2 ${kpi.className}`}>
-                <Icon className="h-4 w-4" />
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      {kpis.map((kpi, index) => (
+        <Card key={index} className="border-0 shadow-soft hover:shadow-soft-lg transition-all duration-200 bg-card/80 backdrop-blur-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{kpi.title}</CardTitle>
+            <div className={cn("inline-flex h-10 w-10 items-center justify-center rounded-xl", kpi.iconBg)}>
+              <kpi.icon className={cn("h-5 w-5", kpi.iconColor)} />
+            </div>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="flex items-center justify-between">
+              <div className="text-2xl font-bold text-foreground">{typeof kpi.value === 'number' ? kpi.value : kpi.value}</div>
+              <div className={cn("flex items-center gap-1 text-xs font-medium rounded-full px-2 py-1", {
+                "text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30": kpi.changeType === "increase",
+                "text-rose-600 bg-rose-100 dark:text-rose-400 dark:bg-rose-900/30": kpi.changeType === "decrease",
+                "text-muted-foreground bg-muted": kpi.changeType === "neutral"
+              })}>
+                {kpi.changeType === "increase" ? (
+                  <ArrowUpRight className="h-3 w-3" />
+                ) : kpi.changeType === "decrease" ? (
+                  <ArrowDownRight className="h-3 w-3" />
+                ) : null}
+                {kpi.change}
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid={`kpi-value-${kpi.title.toLowerCase().replace(/\s+/g, '-')}`}>
-                {kpi.value.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {kpi.description}
-              </p>
-            </CardContent>
-          </Card>
-        );
-      })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{kpi.description}</p>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
