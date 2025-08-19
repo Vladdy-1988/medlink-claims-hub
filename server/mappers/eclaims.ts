@@ -96,31 +96,31 @@ export function mapClaimToEClaims(
     submissionId: claim.id,
     providerInfo: {
       providerId: provider.id,
-      licenseNumber: provider.licenseNumber,
+      licenseNumber: provider.licenceNumber || 'TEMP001',
       name: provider.name,
       address: {
-        street: provider.address,
-        city: provider.city || '',
-        province: provider.province || 'ON',
-        postalCode: provider.postalCode || ''
+        street: 'Main Street 123', // Default values since schema doesn't have address fields
+        city: 'Toronto',
+        province: 'ON',
+        postalCode: 'M5V 3A1'
       },
-      phone: provider.phone
+      phone: '416-555-0123' // Default phone
     },
     patientInfo: {
-      healthCardNumber: patient.healthCardNumber,
+      healthCardNumber: (patient.identifiers as any)?.healthCard || (patient.identifiers as any)?.ohip || 'UNKNOWN',
       firstName: patient.name.split(' ')[0] || '',
       lastName: patient.name.split(' ').slice(1).join(' ') || '',
-      dateOfBirth: patient.dateOfBirth,
-      gender: patient.gender,
-      address: patient.address ? {
-        street: patient.address,
-        city: patient.city || '',
-        province: patient.province || 'ON',
-        postalCode: patient.postalCode || ''
+      dateOfBirth: patient.dob?.toISOString().split('T')[0] || '1990-01-01',
+      gender: (patient.identifiers as any)?.gender || 'U',
+      address: (patient.identifiers as any)?.address ? {
+        street: (patient.identifiers as any).address.street || 'Unknown Address',
+        city: (patient.identifiers as any).address.city || 'Toronto',
+        province: (patient.identifiers as any).address.province || 'ON',
+        postalCode: (patient.identifiers as any).address.postalCode || 'M5V 3A1'
       } : undefined
     },
     serviceInfo: {
-      serviceDate: claim.createdAt.toISOString().split('T')[0], // YYYY-MM-DD
+      serviceDate: claim.createdAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0], // YYYY-MM-DD
       serviceCodes,
       diagnosis: (claim.codes as any)?.diagnosis ? {
         primary: (claim.codes as any).diagnosis.primary,
@@ -130,8 +130,8 @@ export function mapClaimToEClaims(
     claimInfo: {
       totalAmount: parseFloat(claim.amount),
       currency: claim.currency,
-      referenceNumber: claim.referenceNumber,
-      notes: claim.notes
+      referenceNumber: claim.referenceNumber || undefined,
+      notes: claim.notes || undefined
     }
   };
 

@@ -8,7 +8,7 @@ import { ConnectorError } from '../lib/errors';
 import { mapClaimToEClaims, parseEClaimsResponse } from '../mappers/eclaims';
 import { simulateEClaimsResponse, simulateProcessingDelay, validateSandboxToken, generateSandboxToken } from '../sandbox/carrier-sim';
 import { db } from '../db';
-import { patients, providers } from '../../shared/schema';
+import { patients, providers, claims } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import type { Claim } from '../../shared/schema';
 
@@ -18,7 +18,7 @@ interface TokenCache {
 }
 
 export class TelusEClaimsConnector extends BaseConnector {
-  private config: any;
+  protected config: any;
   private tokenCache: TokenCache | null = null;
 
   async validate(claim: Claim): Promise<void> {
@@ -216,7 +216,8 @@ export class TelusEClaimsConnector extends BaseConnector {
       // Get claim to determine amount for simulation
       const [claim] = await db
         .select()
-        .from(db.select().from(require('../../shared/schema').claims).where(eq(require('../../shared/schema').claims.id, claimId)));
+        .from(claims)
+        .where(eq(claims.id, claimId));
       
       if (!claim) {
         throw new ConnectorError('VALIDATION_ERROR', `Claim ${claimId} not found`);
@@ -292,10 +293,12 @@ export class TelusEClaimsConnector extends BaseConnector {
     }
     
     // Request new token
-    const tokenRequest = generateTokenRequest(
-      process.env.ECLAIMS_CLIENT_ID!,
-      process.env.ECLAIMS_CLIENT_SECRET!
-    );
+    const tokenRequest = {
+      grant_type: 'client_credentials',
+      client_id: process.env.ECLAIMS_CLIENT_ID!,
+      client_secret: process.env.ECLAIMS_CLIENT_SECRET!,
+      scope: 'eclaims:submit eclaims:status'
+    };
     
     // TODO: Implement actual OAuth token request
     /*

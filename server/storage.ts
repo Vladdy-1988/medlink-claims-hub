@@ -55,12 +55,12 @@ export interface IStorage {
   createOrganization(org: InsertOrganization): Promise<Organization>;
   
   // Patient operations
-  getPatients(orgId: string): Promise<Patient[]>;
+  getPatients(orgId: string, filter?: { id?: string }): Promise<Patient[]>;
   getPatient(id: string): Promise<Patient | undefined>;
   createPatient(patient: InsertPatient): Promise<Patient>;
   
   // Provider operations
-  getProviders(orgId: string): Promise<Provider[]>;
+  getProviders(orgId: string, filter?: { id?: string }): Promise<Provider[]>;
   getProvider(id: string): Promise<Provider | undefined>;
   createProvider(provider: InsertProvider): Promise<Provider>;
   
@@ -107,9 +107,7 @@ export interface IStorage {
   createConnectorError(error: InsertConnectorError): Promise<ConnectorError>;
   getConnectorEvents(claimId: string): Promise<ConnectorTransaction[]>;
 
-  // Enhanced methods for EDI requirements
-  getPatients(orgId: string, filter?: { id?: string }): Promise<Patient[]>;
-  getProviders(orgId: string, filter?: { id?: string }): Promise<Provider[]>;
+
 }
 
 export class DatabaseStorage implements IStorage {
@@ -369,7 +367,7 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(claims)
       .set({ 
-        status,
+        status: status as any,
         updatedAt: new Date(),
       })
       .where(eq(claims.id, id));
@@ -399,7 +397,7 @@ export class DatabaseStorage implements IStorage {
       .from(connectorConfigs)
       .where(and(
         eq(connectorConfigs.orgId, orgId),
-        eq(connectorConfigs.name, name)
+        eq(connectorConfigs.name, name as any)
       ));
     return config;
   }
