@@ -20,14 +20,23 @@ export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) 
   const totalProcessed = stats.paidClaims + stats.deniedClaims;
   const successRate = totalProcessed > 0 ? (stats.paidClaims / totalProcessed) * 100 : 0;
   
-  const kpis = [
+  const kpis: Array<{
+    title: string;
+    value: number | string;
+    icon: any;
+    description: string;
+    change: string;
+    changeType: "increase" | "decrease" | "neutral";
+    iconBg: string;
+    iconColor: string;
+  }> = [
     {
       title: "Draft Claims",
       value: stats.draftClaims,
       icon: FileText,
       description: "Unsaved drafts",
       change: "+2",
-      changeType: "neutral" as const,
+      changeType: "neutral",
       iconBg: "bg-slate-100 dark:bg-slate-800",
       iconColor: "text-slate-600 dark:text-slate-400",
     },
@@ -37,7 +46,7 @@ export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) 
       icon: Clock,
       description: "Awaiting response",
       change: "+5",
-      changeType: "increase" as const,
+      changeType: "increase",
       iconBg: "bg-amber-100 dark:bg-amber-900/30",
       iconColor: "text-amber-600 dark:text-amber-400",
     },
@@ -47,7 +56,7 @@ export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) 
       icon: CheckCircle,
       description: "Successfully processed",
       change: "+12",
-      changeType: "increase" as const,
+      changeType: "increase",
       iconBg: "bg-emerald-100 dark:bg-emerald-900/30",
       iconColor: "text-emerald-600 dark:text-emerald-400",
     },
@@ -57,7 +66,7 @@ export function DashboardKpis({ stats, isLoading = false }: DashboardKpisProps) 
       icon: TrendingUp,
       description: "Approval percentage",
       change: "+2.1%",
-      changeType: "increase" as const,
+      changeType: "increase",
       iconBg: "bg-primary-100 dark:bg-primary-900/30",
       iconColor: "text-primary-600 dark:text-primary-400",
     },
