@@ -168,20 +168,3 @@ export abstract class BaseConnector implements Connector {
   abstract pollStatus(externalId: string): Promise<PollResult>;
 }
 
-/**
- * Factory function to get connector instances
- */
-export async function getConnector(type: 'cdanet' | 'eclaims', orgId: string): Promise<BaseConnector> {
-  switch (type) {
-    case 'cdanet':
-      const { CDAnetITransConnector } = await import('./cdanet-itrans');
-      return new CDAnetITransConnector(orgId);
-      
-    case 'eclaims':
-      const { TelusEClaimsConnector } = await import('./telus-eclaims');
-      return new TelusEClaimsConnector(orgId);
-      
-    default:
-      throw new ConnectorError('VALIDATION_ERROR', `Unknown connector type: ${type}`);
-  }
-}
