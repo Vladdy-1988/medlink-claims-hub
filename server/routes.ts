@@ -748,94 +748,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Create test claims
-      const dentalClaim = await storage.createClaim({
+      // Create test claims with different amounts to test sandbox outcomes
+      // Amount ending in .00 → will become paid
+      const dentalClaimPaid = await storage.createClaim({
         orgId: testOrg.id,
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'treatment',
+        type: 'dental',
         status: 'draft',
-        amount: '95.00',
+        amount: '125.00',
         currency: 'CAD',
         codes: { procedure: '21211', tooth: '16' },
-        notes: 'Test dental claim via CDAnet',
-        createdBy: 'test-system'
+        notes: 'Test dental claim - should be PAID (ends .00)',
+        createdBy: 'demo-user'
       });
 
-      const medicalClaim = await storage.createClaim({
+      // Amount ending in .13 → infoRequested
+      const dentalClaimInfo = await storage.createClaim({
         orgId: testOrg.id,
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'treatment',
+        type: 'dental',
         status: 'draft',
-        amount: '75.00',
-        currency: 'CAD', 
-        codes: { procedure: 'A001A', diagnosis: { primary: 'Z00.00' } },
-        notes: 'Test medical claim via eClaims',
-        createdBy: 'test-system'
+        amount: '87.13',
+        currency: 'CAD',
+        codes: { procedure: '21211', tooth: '16' },
+        notes: 'Test dental claim - should be INFO REQUESTED (ends .13)',
+        createdBy: 'demo-user'
       });
 
-      // Test connectors
+      // Amount ending in .99 → denied
+      const medicalClaimDenied = await storage.createClaim({
+        orgId: testOrg.id,
+        patientId: testPatient.id,
+        providerId: testProvider.id,
+        insurerId: testInsurer.id,
+        type: 'medical',
+        status: 'draft',
+        amount: '149.99',
+        currency: 'CAD', 
+        codes: { procedure: 'A001A', diagnosis: { primary: 'Z00.00' } },
+        notes: 'Test medical claim - should be DENIED (ends .99)',
+        createdBy: 'demo-user'
+      });
+
+      // Test connectors with different outcome scenarios
       const results = {
-        cdanet: { status: 'pending', jobId: null, error: null },
-        eclaims: { status: 'pending', jobId: null, error: null }
+        cdanet_paid: { status: 'pending', jobId: null, error: null, amount: '125.00' },
+        cdanet_info: { status: 'pending', jobId: null, error: null, amount: '87.13' },
+        eclaims_denied: { status: 'pending', jobId: null, error: null, amount: '149.99' }
       };
 
-      // Test CDAnet
+      // Test CDAnet with PAID outcome (amount ends .00)
       try {
         const { getConnector } = await import('./connectors/base');
         const cdanetConnector = await getConnector('cdanet', testOrg.id);
-        await cdanetConnector.validate(dentalClaim);
+        await cdanetConnector.validate(dentalClaimPaid);
         
         const { jobQueue } = await import('./lib/jobs');
         const jobId = await jobQueue.enqueue({
           type: 'submit',
-          claimId: dentalClaim.id,
+          claimId: dentalClaimPaid.id,
           connector: 'cdanet'
         });
         
-        results.cdanet = { status: 'submitted', jobId, error: null };
-        console.log('✅ CDAnet connector test passed');
+        results.cdanet_paid = { status: 'submitted', jobId, error: null, amount: '125.00' };
+        console.log('✅ CDAnet connector test (PAID outcome) passed');
         
       } catch (error) {
-        results.cdanet.error = error instanceof Error ? error.message : 'Unknown error';
-        console.error('❌ CDAnet test failed:', error);
+        results.cdanet_paid.error = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ CDAnet PAID test failed:', error);
       }
 
-      // Test eClaims  
+      // Test CDAnet with INFO REQUESTED outcome (amount ends .13)
       try {
         const { getConnector } = await import('./connectors/base');
-        const eClaimsConnector = await getConnector('eclaims', testOrg.id);
-        await eClaimsConnector.validate(medicalClaim);
+        const cdanetConnector = await getConnector('cdanet', testOrg.id);
+        await cdanetConnector.validate(dentalClaimInfo);
         
         const { jobQueue } = await import('./lib/jobs');
         const jobId = await jobQueue.enqueue({
           type: 'submit',
-          claimId: medicalClaim.id,
+          claimId: dentalClaimInfo.id,
+          connector: 'cdanet'
+        });
+        
+        results.cdanet_info = { status: 'submitted', jobId, error: null, amount: '87.13' };
+        console.log('✅ CDAnet connector test (INFO REQUESTED outcome) passed');
+        
+      } catch (error) {
+        results.cdanet_info.error = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ CDAnet INFO test failed:', error);
+      }
+
+      // Test eClaims with DENIED outcome (amount ends .99)
+      try {
+        const { getConnector } = await import('./connectors/base');
+        const eClaimsConnector = await getConnector('eclaims', testOrg.id);
+        await eClaimsConnector.validate(medicalClaimDenied);
+        
+        const { jobQueue } = await import('./lib/jobs');
+        const jobId = await jobQueue.enqueue({
+          type: 'submit',
+          claimId: medicalClaimDenied.id,
           connector: 'eclaims'
         });
         
-        results.eclaims = { status: 'submitted', jobId, error: null };
-        console.log('✅ eClaims connector test passed');
+        results.eclaims_denied = { status: 'submitted', jobId, error: null, amount: '149.99' };
+        console.log('✅ eClaims connector test (DENIED outcome) passed');
         
       } catch (error) {
-        results.eclaims.error = error instanceof Error ? error.message : 'Unknown error';
-        console.error('❌ eClaims test failed:', error);
+        results.eclaims_denied.error = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ eClaims DENIED test failed:', error);
       }
 
-      console.log('🎉 EDI Connector Test Complete!');
+      console.log('🎉 EDI Connector Sandbox Test Complete!');
+      console.log('📋 Test Scenarios:');
+      console.log('   • Dental claim $125.00 (CDAnet) → Expected: PAID');
+      console.log('   • Dental claim $87.13 (CDAnet) → Expected: INFO REQUESTED');
+      console.log('   • Medical claim $149.99 (eClaims) → Expected: DENIED');
 
       res.json({
         success: true,
-        message: 'EDI connector system tested successfully',
+        message: 'EDI connector sandbox test completed - multiple outcome scenarios tested',
         testData: {
           organizationId: testOrg.id,
           providerId: testProvider.id,
           patientId: testPatient.id,
-          dentalClaimId: dentalClaim.id,
-          medicalClaimId: medicalClaim.id
+          dentalClaimPaidId: dentalClaimPaid.id,
+          dentalClaimInfoId: dentalClaimInfo.id,
+          medicalClaimDeniedId: medicalClaimDenied.id
+        },
+        scenarios: {
+          paid: { amount: '125.00', connector: 'cdanet', expectedOutcome: 'paid' },
+          infoRequested: { amount: '87.13', connector: 'cdanet', expectedOutcome: 'infoRequested' },
+          denied: { amount: '149.99', connector: 'eclaims', expectedOutcome: 'denied' }
         },
         results
       });
