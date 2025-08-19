@@ -1,0 +1,52 @@
+In this same repo, do NOT create a new project; REVIEW and TEST the existing MedLink Claims Hub. Keep scope to QA only. If a script name differs, read package.json and adapt.
+
+Tasks:
+
+1) Environment & Start
+- Ensure secrets exist: JWT_SECRET, STORAGE_DIR=uploads (and if present: SSO_SHARED_SECRET, ALLOWED_ORIGINS).
+- Run DB: npm run prisma:migrate && npm run prisma:seed
+- Start dev: npm run dev
+- Post the exact Web Preview URL.
+
+2) Static checks
+- Type check: npx tsc --noEmit (or npm run typecheck if available). Fix any TS errors.
+- Lint/format: npm run lint && npm run format (or equivalents). Fix issues.
+
+3) Unit & API tests
+- Run unit/API tests: npm test (and/or npm run test:api). Paste summary.
+- If tests are missing, create minimal tests:
+  - API (Supertest): GET /claims (auth required) returns 200 with seeded data.
+  - RBAC: provider cannot access /admin; admin can.
+  - Upload: POST /uploads/presign then finalize attachment.
+
+4) E2E test (Playwright)
+- Ensure Playwright is installed; if not, add it. Then:
+  - e2e flow: login (mock Replit Auth if needed) → create claim via "portal" rail with a small dummy file → assert it appears in /claims with status "submitted" → open detail and assert timeline shows "Created" and "Submitted".
+- Run the e2e and paste output. If it fails, patch and re-run.
+
+5) Offline draft test
+- In Playwright, set page.setOfflineMode(true) during /claims/new; fill step 1 and 2 and confirm autosave indicator. Then set online, wait for sync, and assert draft/claim persisted server-side.
+
+6) Security & auth sanity
+- Verify the auth cookie is httpOnly; in HTTPS it should be Secure; SameSite=Lax.
+- Verify CORS only allows ALLOWED_ORIGINS (try a disallowed origin with a curl/fetch and show it is blocked).
+- Confirm rate-limit or basic abuse guard exists on auth/claims endpoints; if missing, add a lightweight express-rate-limit (conservative defaults).
+
+7) PWA checks
+- Confirm manifest loads, service worker registers, app is installable, and basic caching works (serve a cached page on reload).
+- (Optional) Run a quick Lighthouse check and paste scores; do not obsess over 100s.
+
+8) Build checks
+- Build web and API bundles: npm run build (root and/or apps/* as needed). Fix build breaks.
+- Ensure a clean start after build (document how to start).
+
+9) Role paths
+- Seed an admin user if not present (update prisma/seed.ts). Verify /admin is visible for admin only.
+
+Deliverables:
+- Preview URL
+- Command logs (typecheck, lint, tests, e2e)
+- A short checklist: ✅/❌ for each section above
+- Diffs for any fixes applied (filenames + brief summary)
+
+Do not add features or redesign UI. Only QA and small fixes needed to get green checks.
