@@ -223,20 +223,24 @@ export class DatabaseStorage implements IStorage {
     return insurer;
   }
 
-  async createInsurer(data: InsertInsurer): Promise<Insurer> {
+  async createInsurer(data: any): Promise<Insurer> {
     const [insurer] = await db.insert(insurers).values(data).returning();
     return insurer;
   }
 
   async getClaims(orgId: string, userId?: string, role?: string): Promise<Claim[]> {
-    let query = db.select().from(claims).where(eq(claims.orgId, orgId));
+    const baseConditions = [eq(claims.orgId, orgId)];
     
     // Role-based filtering
     if (role === 'provider' && userId) {
-      query = query.where(and(eq(claims.orgId, orgId), eq(claims.createdBy, userId)));
+      baseConditions.push(eq(claims.createdBy, userId));
     }
     
-    return await query.orderBy(desc(claims.createdAt));
+    return await db
+      .select()
+      .from(claims)
+      .where(and(...baseConditions))
+      .orderBy(desc(claims.createdAt));
   }
 
   async getClaim(id: string): Promise<Claim | undefined> {
@@ -268,11 +272,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRemittances(orgId: string): Promise<Remittance[]> {
-    return await db
-      .select()
+    const results = await db
+      .select({
+        id: remittances.id,
+        insurerId: remittances.insurerId,
+        claimId: remittances.claimId,
+        status: remittances.status,
+        amountPaid: remittances.amountPaid,
+        raw: remittances.raw,
+        createdAt: remittances.createdAt
+      })
       .from(remittances)
       .innerJoin(insurers, eq(remittances.insurerId, insurers.id))
       .orderBy(desc(remittances.createdAt));
+    return results;
   }
 
   async createRemittance(remittanceData: InsertRemittance): Promise<Remittance> {
