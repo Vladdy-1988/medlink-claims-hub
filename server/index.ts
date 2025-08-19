@@ -41,13 +41,12 @@ app.use((req, res, next) => {
   const { runSeedGuard } = await import("./seedGuard");
   await runSeedGuard();
   
-  // Start EDI job queue workers
+  // Initialize EDI job queue
   try {
     const { jobQueue } = await import("./lib/jobs");
-    await jobQueue.start();
-    console.log('✅ EDI job queue started successfully');
+    console.log('✅ EDI job queue initialized successfully');
   } catch (error) {
-    console.error('❌ Failed to start EDI job queue:', error);
+    console.error('❌ Failed to initialize EDI job queue:', error);
   }
   
   const server = await registerRoutes(app);

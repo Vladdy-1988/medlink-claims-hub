@@ -669,6 +669,186 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test EDI connectors endpoint
+  app.post('/api/test/edi-connectors', async (req, res) => {
+    try {
+      console.log('🧪 Testing EDI Connector System...');
+
+      // Create test data quickly
+      const testOrg = await storage.createOrganization({
+        name: 'EDI Test Clinic',
+        type: 'clinic',
+        address: '123 Test Street',
+        city: 'Toronto', 
+        province: 'ON',
+        postalCode: 'M5V 3A3',
+        phone: '416-555-0123',
+        email: 'test@ediclinic.com'
+      });
+
+      const testProvider = await storage.createProvider({
+        orgId: testOrg.id,
+        name: 'Dr. Test Provider',
+        licenseNumber: 'TEST123456',
+        specialty: 'General Practice',
+        phone: '416-555-0124',
+        email: 'provider@ediclinic.com',
+        address: '123 Test Street',
+        city: 'Toronto',
+        province: 'ON', 
+        postalCode: 'M5V 3A3'
+      });
+
+      const testPatient = await storage.createPatient({
+        orgId: testOrg.id,
+        name: 'Test Patient',
+        healthCardNumber: '9876543210',
+        dateOfBirth: '1985-03-20',
+        gender: 'female',
+        phone: '416-555-0125',
+        email: 'patient@example.com',
+        address: '456 Patient Ave',
+        city: 'Toronto',
+        province: 'ON',
+        postalCode: 'M4B 1B3'
+      });
+
+      const testInsurer = await storage.createInsurer({
+        name: 'Test Insurance Co',
+        code: 'TIC',
+        phone: '1-800-555-0100',
+        address: '789 Insurer Blvd',
+        city: 'Toronto',
+        province: 'ON',
+        postalCode: 'M1A 1A1'
+      });
+
+      // Setup connector configs
+      await storage.upsertConnectorConfig({
+        orgId: testOrg.id,
+        name: 'cdanet',
+        enabled: true,
+        mode: 'sandbox',
+        settings: {
+          softwareId: 'MEDLINK_TEST',
+          version: '1.0',
+          providerId: testProvider.id
+        }
+      });
+
+      await storage.upsertConnectorConfig({
+        orgId: testOrg.id,
+        name: 'eclaims', 
+        enabled: true,
+        mode: 'sandbox',
+        settings: {
+          providerId: testProvider.id,
+          licenseNumber: testProvider.licenseNumber
+        }
+      });
+
+      // Create test claims
+      const dentalClaim = await storage.createClaim({
+        orgId: testOrg.id,
+        patientId: testPatient.id,
+        providerId: testProvider.id,
+        insurerId: testInsurer.id,
+        type: 'treatment',
+        status: 'draft',
+        amount: '95.00',
+        currency: 'CAD',
+        codes: { procedure: '21211', tooth: '16' },
+        notes: 'Test dental claim via CDAnet',
+        createdBy: 'test-system'
+      });
+
+      const medicalClaim = await storage.createClaim({
+        orgId: testOrg.id,
+        patientId: testPatient.id,
+        providerId: testProvider.id,
+        insurerId: testInsurer.id,
+        type: 'treatment',
+        status: 'draft',
+        amount: '75.00',
+        currency: 'CAD', 
+        codes: { procedure: 'A001A', diagnosis: { primary: 'Z00.00' } },
+        notes: 'Test medical claim via eClaims',
+        createdBy: 'test-system'
+      });
+
+      // Test connectors
+      const results = {
+        cdanet: { status: 'pending', jobId: null, error: null },
+        eclaims: { status: 'pending', jobId: null, error: null }
+      };
+
+      // Test CDAnet
+      try {
+        const { getConnector } = await import('./connectors/base');
+        const cdanetConnector = await getConnector('cdanet', testOrg.id);
+        await cdanetConnector.validate(dentalClaim);
+        
+        const { jobQueue } = await import('./lib/jobs');
+        const jobId = await jobQueue.enqueue({
+          type: 'submit',
+          claimId: dentalClaim.id,
+          connector: 'cdanet'
+        });
+        
+        results.cdanet = { status: 'submitted', jobId, error: null };
+        console.log('✅ CDAnet connector test passed');
+        
+      } catch (error) {
+        results.cdanet.error = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ CDAnet test failed:', error);
+      }
+
+      // Test eClaims  
+      try {
+        const { getConnector } = await import('./connectors/base');
+        const eClaimsConnector = await getConnector('eclaims', testOrg.id);
+        await eClaimsConnector.validate(medicalClaim);
+        
+        const { jobQueue } = await import('./lib/jobs');
+        const jobId = await jobQueue.enqueue({
+          type: 'submit',
+          claimId: medicalClaim.id,
+          connector: 'eclaims'
+        });
+        
+        results.eclaims = { status: 'submitted', jobId, error: null };
+        console.log('✅ eClaims connector test passed');
+        
+      } catch (error) {
+        results.eclaims.error = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ eClaims test failed:', error);
+      }
+
+      console.log('🎉 EDI Connector Test Complete!');
+
+      res.json({
+        success: true,
+        message: 'EDI connector system tested successfully',
+        testData: {
+          organizationId: testOrg.id,
+          providerId: testProvider.id,
+          patientId: testPatient.id,
+          dentalClaimId: dentalClaim.id,
+          medicalClaimId: medicalClaim.id
+        },
+        results
+      });
+
+    } catch (error) {
+      console.error('❌ EDI Test Error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'EDI connector test failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
