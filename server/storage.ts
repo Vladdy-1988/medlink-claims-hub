@@ -223,6 +223,11 @@ export class DatabaseStorage implements IStorage {
     return insurer;
   }
 
+  async createInsurer(data: InsertInsurer): Promise<Insurer> {
+    const [insurer] = await db.insert(insurers).values(data).returning();
+    return insurer;
+  }
+
   async getClaims(orgId: string, userId?: string, role?: string): Promise<Claim[]> {
     let query = db.select().from(claims).where(eq(claims.orgId, orgId));
     

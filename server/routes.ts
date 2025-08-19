@@ -716,6 +716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const testInsurer = await storage.createInsurer({
         name: 'Test Insurance Co',
         code: 'TIC',
+        rail: 'portal',
         phone: '1-800-555-0100',
         address: '789 Insurer Blvd',
         city: 'Toronto',
