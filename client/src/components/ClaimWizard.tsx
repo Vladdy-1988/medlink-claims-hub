@@ -11,7 +11,7 @@ import { ChevronLeft, ChevronRight, Check, Upload, User, FileText, Send } from "
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { get, set, clear } from "idb-keyval";
+import { get, set, del } from "idb-keyval";
 import { useLocation } from "wouter";
 
 interface Patient {
@@ -125,7 +125,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
     },
     onSuccess: async (response: any) => {
       try {
-        await clear(AUTOSAVE_KEY); // Clear draft after successful submission
+        await del(AUTOSAVE_KEY); // Clear draft after successful submission
       } catch (error) {
         console.error('Failed to clear draft:', error);
       }
