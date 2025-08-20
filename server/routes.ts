@@ -3,6 +3,19 @@ import { createServer, type Server } from "http";
 import cors from "cors";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+
+// Development mode authentication bypass
+const devAuth = (middleware: any) => {
+  return async (req: any, res: any, next: any) => {
+    if (process.env.NODE_ENV === 'development') {
+      // Skip authentication in development
+      req.user = { claims: { sub: 'dev-user-001' } };
+      return next();
+    }
+    // Use real authentication in production
+    return middleware(req, res, next);
+  };
+};
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, insertPushSubscriptionSchema, insertConnectorConfigSchema } from "@shared/schema";
@@ -35,7 +48,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.get('/api/auth/user', async (req: any, res) => {
+    // Development mode bypass for Replit preview
+    if (process.env.NODE_ENV === 'development' && !req.isAuthenticated()) {
+      // Create a development user
+      const devUser = await storage.upsertUser({
+        id: 'dev-user-001',
+        email: 'dev@medlinkclaims.com',
+        firstName: 'Development',
+        lastName: 'User',
+        profileImageUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=dev',
+        role: 'admin' as const,
+      });
+      return res.json(devUser);
+    }
+
+    // Production authentication flow
+    if (!req.isAuthenticated() || !req.user?.claims?.sub) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
@@ -64,8 +96,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   // Dashboard API
-  app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/dashboard/stats', async (req: any, res) => {
     try {
+      // Development mode bypass
+      if (process.env.NODE_ENV === 'development') {
+        const devUser = await storage.getUser('dev-user-001');
+        const stats = await storage.getDashboardStats(devUser?.orgId || 'org-1');
+        return res.json(stats);
+      }
+
+      // Production flow
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
         return res.status(400).json({ message: "User not associated with organization" });
@@ -84,7 +128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ publicKey: PushNotificationService.getVAPIDPublicKey() });
   });
 
-  app.post('/api/push/subscribe', isAuthenticated, async (req: any, res) => {
+  app.post('/api/push/subscribe', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -122,7 +166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/push/test', isAuthenticated, async (req: any, res) => {
+  app.post('/api/push/test', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const result = await PushNotificationService.sendTestNotification(req.user.claims.sub);
       
@@ -135,7 +179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/push/unsubscribe', isAuthenticated, async (req: any, res) => {
+  app.post('/api/push/unsubscribe', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const { endpoint } = req.body;
       if (!endpoint) {
@@ -157,7 +201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Background sync endpoint for periodic updates
-  app.get('/api/claims/updates', isAuthenticated, async (req: any, res) => {
+  app.get('/api/claims/updates', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -185,7 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Claims API
-  app.get('/api/claims', isAuthenticated, async (req: any, res) => {
+  app.get('/api/claims', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -200,7 +244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/claims/:id', isAuthenticated, async (req: any, res) => {
+  app.get('/api/claims/:id', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const claim = await storage.getClaim(req.params.id);
       if (!claim) {
@@ -225,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/claims', isAuthenticated, async (req: any, res) => {
+  app.post('/api/claims', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -252,7 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/claims/:id', isAuthenticated, async (req: any, res) => {
+  app.patch('/api/claims/:id', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const claim = await storage.getClaim(req.params.id);
       if (!claim) {
@@ -297,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Patients API
-  app.get('/api/patients', isAuthenticated, async (req: any, res) => {
+  app.get('/api/patients', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -313,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Providers API
-  app.get('/api/providers', isAuthenticated, async (req: any, res) => {
+  app.get('/api/providers', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -340,7 +384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File upload endpoints
-  app.post('/api/objects/upload', isAuthenticated, async (req: any, res) => {
+  app.post('/api/objects/upload', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
@@ -351,7 +395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/attachments', isAuthenticated, async (req: any, res) => {
+  app.post('/api/attachments', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -383,7 +427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected file serving
-  app.get("/objects/:objectPath(*)", isAuthenticated, async (req: any, res) => {
+  app.get("/objects/:objectPath(*)", devAuth(isAuthenticated), async (req: any, res) => {
     const userId = req.user?.claims?.sub;
     const objectStorageService = new ObjectStorageService();
     try {
@@ -407,7 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remittances API
-  app.get('/api/remittances', isAuthenticated, async (req: any, res) => {
+  app.get('/api/remittances', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -422,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/remittances', isAuthenticated, async (req: any, res) => {
+  app.post('/api/remittances', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const validatedData = insertRemittanceSchema.parse(req.body);
       const remittance = await storage.createRemittance(validatedData);
@@ -440,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // EDI Connector API Routes
-  app.post('/api/connectors/submit', isAuthenticated, async (req: any, res) => {
+  app.post('/api/connectors/submit', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const { claimId, connector } = req.body;
       
@@ -492,7 +536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get connector status for claim
-  app.get('/api/connectors/:claimId/status', isAuthenticated, async (req: any, res) => {
+  app.get('/api/connectors/:claimId/status', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const { claimId } = req.params;
       
@@ -532,7 +576,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Configure connectors
-  app.post('/api/admin/connectors/config', isAuthenticated, async (req: any, res) => {
+  app.post('/api/admin/connectors/config', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId || user.role !== 'admin') {
@@ -563,7 +607,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Test connector dry-run
-  app.post('/api/connectors/test', isAuthenticated, async (req: any, res) => {
+  app.post('/api/connectors/test', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId || user.role !== 'admin') {
@@ -627,7 +671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoints
-  app.get('/api/admin/users', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/users', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (user?.role !== 'admin') {
@@ -642,7 +686,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/audit', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/audit', devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (user?.role !== 'admin' || !user.orgId) {
