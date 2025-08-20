@@ -328,8 +328,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Insurers API
-  app.get('/api/insurers', isAuthenticated, async (req: any, res) => {
+  // Insurers API - temporarily public for development
+  app.get('/api/insurers', async (req: any, res) => {
     try {
       const insurers = await storage.getInsurers();
       res.json(insurers);
