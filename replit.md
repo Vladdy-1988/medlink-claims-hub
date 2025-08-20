@@ -6,6 +6,8 @@ MedLink Claims Hub is a secure, installable Progressive Web App (PWA) for health
 
 **Recent Progress (August 2025)**: Successfully completed full application integration and testing. Migrated from SQLite to PostgreSQL (Neon) with complete Drizzle migration infrastructure. Implemented comprehensive UI components including ClaimWizard, DashboardKpis, ClaimsTable, and ClaimTimeline. Enhanced PWA features with push notifications, install prompts, and offline IndexedDB synchronization. All core pages integrated with proper data flow, error handling, and authentication. Added SSO handshake functionality for marketplace integration with JWT-based shared-secret authentication, CORS configuration, and audit logging. Application successfully tested and verified functional at http://localhost:5000.
 
+**August 20, 2025**: Fixed preview window rendering issues and made insurers API accessible for development. Added 24 proper Canadian insurance companies to database (Manulife Financial, Sun Life Financial, Blue Cross Canada, Desjardins Group, GreenShield Canada, etc.) replacing previous US insurers. Resolved TypeScript compilation errors in ClaimWizard component. Preview window now working correctly in Replit development environment.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
