@@ -1,24 +1,11 @@
 import { Stethoscope, Shield, Clock, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEffect } from "react";
 
 export default function Landing() {
-  // In development mode, skip authentication
-  useEffect(() => {
-    if (import.meta.env.MODE === 'development') {
-      // Automatically redirect to home page in development
-      window.location.href = '/';
-    }
-  }, []);
-
   const handleLogin = () => {
-    // In development, just refresh to load as dev user
-    if (import.meta.env.MODE === 'development') {
-      window.location.reload();
-    } else {
-      window.location.href = "/api/login";
-    }
+    // Only redirect to login in production
+    window.location.href = "/api/login";
   };
 
   const features = [

@@ -32,8 +32,11 @@ function Router() {
     }
   }, []);
 
-  // Simple fallback if loading takes too long
-  if (isLoading) {
+  // In development mode, skip authentication check
+  const isDev = import.meta.env.MODE === 'development';
+
+  // Simple fallback if loading takes too long (but skip in dev mode)
+  if (!isDev && isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
@@ -43,9 +46,6 @@ function Router() {
       </div>
     );
   }
-
-  // In development mode, skip authentication check
-  const isDev = import.meta.env.MODE === 'development';
   
   // Force show landing page if not authenticated (except in development)
   if (!isDev && !isAuthenticated) {
