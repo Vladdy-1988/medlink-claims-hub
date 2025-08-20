@@ -44,8 +44,11 @@ function Router() {
     );
   }
 
-  // Force show landing page if not authenticated
-  if (!isAuthenticated) {
+  // In development mode, skip authentication check
+  const isDev = import.meta.env.MODE === 'development';
+  
+  // Force show landing page if not authenticated (except in development)
+  if (!isDev && !isAuthenticated) {
     return <Landing />;
   }
 
