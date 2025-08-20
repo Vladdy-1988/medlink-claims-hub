@@ -21,6 +21,30 @@ import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 
 function Router() {
+  // DEVELOPMENT MODE - NO AUTHENTICATION NEEDED
+  const isDev = import.meta.env.MODE === 'development';
+  
+  if (isDev) {
+    // In development, go straight to the app - NO LANDING PAGE, NO LOGIN
+    return (
+      <Switch>
+        <AppShell>
+          <Route path="/" component={Dashboard} />
+          <Route path="/claims" component={Claims} />
+          <Route path="/claims/new" component={NewClaim} />
+          <Route path="/preauths/new" component={NewPreAuth} />
+          <Route path="/claims/:id" component={ClaimDetail} />
+          <Route path="/remittances" component={Remittances} />
+          <Route path="/settings" component={Settings} />
+          <Route path="/admin" component={Admin} />
+        </AppShell>
+        <Route component={NotFound} />
+        <InstallPrompt />
+      </Switch>
+    );
+  }
+
+  // PRODUCTION MODE ONLY - Normal authentication
   const { isAuthenticated, isLoading } = useAuth();
 
   // Handle SSO login on component mount
@@ -32,11 +56,7 @@ function Router() {
     }
   }, []);
 
-  // In development mode, skip authentication check
-  const isDev = import.meta.env.MODE === 'development';
-
-  // Simple fallback if loading takes too long (but skip in dev mode)
-  if (!isDev && isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
@@ -47,8 +67,7 @@ function Router() {
     );
   }
   
-  // Force show landing page if not authenticated (except in development)
-  if (!isDev && !isAuthenticated) {
+  if (!isAuthenticated) {
     return <Landing />;
   }
 
