@@ -170,7 +170,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get claims that have been updated since the specified time
       const claims = await storage.getClaims(user.orgId, user.id, user.role);
       const recentlyUpdated = claims.filter(claim => 
-        new Date(claim.updatedAt) > sinceDate
+        claim.updatedAt && new Date(claim.updatedAt) > sinceDate
       );
 
       res.json({

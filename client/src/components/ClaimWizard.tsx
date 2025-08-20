@@ -124,7 +124,11 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
       });
     },
     onSuccess: async (response: any) => {
-      await clear(AUTOSAVE_KEY); // Clear draft after successful submission
+      try {
+        await clear(AUTOSAVE_KEY); // Clear draft after successful submission
+      } catch (error) {
+        console.error('Failed to clear draft:', error);
+      }
       toast({
         title: "Success",
         description: `${type === 'preauth' ? 'Pre-authorization' : 'Claim'} submitted successfully`,
@@ -278,7 +282,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select patient" />
                   </SelectTrigger>
                   <SelectContent>
-                    {patients && Array.isArray(patients) && patients.map((patient: Patient) => (
+                    {patients && Array.isArray(patients) && (patients as Patient[]).map((patient: Patient) => (
                       <SelectItem key={patient.id} value={patient.id}>
                         {patient.name}
                       </SelectItem>
@@ -298,7 +302,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providers && Array.isArray(providers) && providers.map((provider: Provider) => (
+                    {providers && Array.isArray(providers) && (providers as Provider[]).map((provider: Provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
                         {provider.name} {provider.discipline && `(${provider.discipline})`}
                       </SelectItem>
@@ -318,7 +322,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select insurer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {insurers && Array.isArray(insurers) && insurers.map((insurer: Insurer) => (
+                    {insurers && Array.isArray(insurers) && (insurers as Insurer[]).map((insurer: Insurer) => (
                       <SelectItem key={insurer.id} value={insurer.id}>
                         {insurer.name}
                         <Badge variant="secondary" className="ml-2 text-xs">
