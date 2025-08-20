@@ -1,0 +1,167 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "generated": "2025-08-20",
+    "total_programs": 43,
+    "coverage_summary": {
+      "supported": 0,
+      "sandbox": 2,
+      "partial": 1,
+      "todo": 40
+    }
+  },
+  "coverage": [
+    {
+      "province": "National",
+      "program": "CDAnet",
+      "disciplines": ["Dental"],
+      "rail": "ITRANS",
+      "status": "sandbox",
+      "priority": "P0",
+      "requirements": {
+        "credentials": ["ITRANS Certificate", "CDAnet Provider ID"],
+        "testing": "Certification required",
+        "timeline": "2-3 weeks"
+      }
+    },
+    {
+      "province": "National",
+      "program": "TELUS eClaims",
+      "disciplines": ["Physiotherapy", "Occupational Therapy", "Chiropractic", "Massage Therapy", "Psychology", "Optometry"],
+      "rail": "OAuth API",
+      "status": "sandbox",
+      "priority": "P0",
+      "requirements": {
+        "credentials": ["Client ID", "Client Secret", "OAuth Token"],
+        "testing": "Sandbox testing available",
+        "timeline": "1-2 weeks"
+      }
+    },
+    {
+      "province": "AB",
+      "program": "Alberta Blue Cross",
+      "disciplines": ["All"],
+      "rail": "Portal/API",
+      "status": "todo",
+      "priority": "P0",
+      "requirements": {
+        "credentials": ["Provider Portal Access"],
+        "testing": "UAT environment needed",
+        "timeline": "3-4 weeks"
+      }
+    },
+    {
+      "province": "ON",
+      "program": "WSIB",
+      "disciplines": ["All"],
+      "rail": "Portal",
+      "status": "todo",
+      "priority": "P2",
+      "requirements": {
+        "credentials": ["WSIB Provider Number", "Portal Access"],
+        "testing": "Test environment available",
+        "timeline": "4-6 weeks"
+      }
+    },
+    {
+      "province": "QC",
+      "program": "CNESST",
+      "disciplines": ["All"],
+      "rail": "Portal",
+      "status": "todo",
+      "priority": "P2",
+      "requirements": {
+        "credentials": ["CNESST Provider Number"],
+        "language": "French mandatory",
+        "testing": "Production only",
+        "timeline": "6-8 weeks"
+      }
+    },
+    {
+      "province": "Federal",
+      "program": "NIHB",
+      "disciplines": ["All"],
+      "rail": "Portal",
+      "status": "todo",
+      "priority": "P1",
+      "requirements": {
+        "credentials": ["NIHB Provider Number", "Express Scripts Canada Access"],
+        "testing": "Test claims available",
+        "timeline": "4-5 weeks"
+      }
+    }
+  ],
+  "compliance_requirements": {
+    "federal": {
+      "PIPEDA": {
+        "status": "partial",
+        "gaps": ["Breach notification system", "Data portability API", "Consent management"]
+      }
+    },
+    "provincial": {
+      "AB": {
+        "law": "HIA",
+        "status": "gap",
+        "requirements": ["Custodian agreements", "Affiliate agreements", "Retention policies"]
+      },
+      "ON": {
+        "law": "PHIPA",
+        "status": "gap",
+        "requirements": ["Circle of care documentation", "Lockbox capability", "Audit controls"]
+      },
+      "QC": {
+        "law": "Law 25",
+        "status": "major_gap",
+        "requirements": ["Full French translation", "Privacy impact assessment", "Stricter consent"]
+      }
+    }
+  },
+  "technical_requirements": {
+    "i18n": {
+      "status": "not_implemented",
+      "languages_needed": ["en-CA", "fr-CA"],
+      "priority": "P0 for Quebec"
+    },
+    "tax_configuration": {
+      "status": "not_implemented",
+      "requirements": {
+        "GST": "5% federal",
+        "HST": "13-15% (ON, NS, NB, NL, PE)",
+        "PST": "6-9.975% (BC, SK, MB, QC)",
+        "exemptions": "Medical device exemptions vary by province"
+      }
+    },
+    "code_catalogs": {
+      "dental_codes": {
+        "status": "partial",
+        "version": "CDA 2024",
+        "gaps": ["Version management", "Update mechanism"]
+      },
+      "allied_codes": {
+        "status": "todo",
+        "required": ["CPT codes", "Provincial fee guides"]
+      }
+    }
+  },
+  "action_items": {
+    "immediate": [
+      "Implement i18n framework",
+      "Add French translations for Quebec",
+      "Fix TypeScript compilation errors",
+      "Add CSRF protection",
+      "Implement rate limiting"
+    ],
+    "short_term": [
+      "Complete CDAnet live integration",
+      "Implement TELUS OAuth flow",
+      "Add tax configuration system",
+      "Create test suite"
+    ],
+    "long_term": [
+      "Provincial WCB portal automation",
+      "NIHB integration",
+      "Complete provincial compliance",
+      "Security audit"
+    ]
+  }
+}

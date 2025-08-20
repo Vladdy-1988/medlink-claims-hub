@@ -1,0 +1,93 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "close": "Close",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "import": "Import",
+    "download": "Download",
+    "upload": "Upload",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "signInToContinue": "Sign In to Continue",
+    "welcome": "Welcome"
+  },
+  "claims": {
+    "title": "Claims",
+    "newClaim": "New Claim",
+    "claimNumber": "Claim Number",
+    "patient": "Patient",
+    "provider": "Provider",
+    "insurer": "Insurance Provider",
+    "amount": "Amount",
+    "status": "Status",
+    "serviceDate": "Service Date",
+    "submittedDate": "Submitted Date",
+    "description": "Description",
+    "procedureCodes": "Procedure Codes",
+    "attachments": "Attachments",
+    "timeline": "Timeline",
+    "statuses": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "paid": "Paid"
+    }
+  },
+  "patients": {
+    "title": "Patients",
+    "newPatient": "New Patient",
+    "name": "Name",
+    "dateOfBirth": "Date of Birth",
+    "healthCardNumber": "Health Card Number",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address"
+  },
+  "providers": {
+    "title": "Providers",
+    "newProvider": "New Provider",
+    "name": "Name",
+    "discipline": "Discipline",
+    "licenseNumber": "License Number",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address"
+  },
+  "privacy": {
+    "consent": "I consent to the collection and use of my personal health information",
+    "privacyPolicy": "Privacy Policy",
+    "termsOfService": "Terms of Service",
+    "dataRetention": "Data Retention Policy"
+  },
+  "provinces": {
+    "AB": "Alberta",
+    "BC": "British Columbia",
+    "MB": "Manitoba",
+    "NB": "New Brunswick",
+    "NL": "Newfoundland and Labrador",
+    "NS": "Nova Scotia",
+    "NT": "Northwest Territories",
+    "NU": "Nunavut",
+    "ON": "Ontario",
+    "PE": "Prince Edward Island",
+    "QC": "Quebec",
+    "SK": "Saskatchewan",
+    "YT": "Yukon"
+  }
+}

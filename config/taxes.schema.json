@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Canadian Tax Configuration Schema",
+  "description": "Tax configuration for Canadian healthcare services by province and discipline",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "configurations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["province", "discipline", "taxable_service", "tax_types"],
+        "properties": {
+          "province": {
+            "type": "string",
+            "enum": ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"]
+          },
+          "discipline": {
+            "type": "string",
+            "enum": [
+              "dental",
+              "denturist",
+              "hygienist",
+              "physiotherapy",
+              "chiropractic",
+              "massage",
+              "psychology",
+              "occupational_therapy",
+              "optometry",
+              "audiology",
+              "naturopathy",
+              "acupuncture",
+              "podiatry",
+              "dietetics",
+              "social_work",
+              "speech_therapy"
+            ]
+          },
+          "taxable_service": {
+            "type": "boolean",
+            "description": "Whether this service is generally taxable"
+          },
+          "tax_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["GST", "HST", "PST", "QST", "RST"]
+            }
+          },
+          "exemption_notes": {
+            "type": "string",
+            "description": "Notes about exemptions or special conditions"
+          },
+          "insurer_specific": {
+            "type": "object",
+            "description": "Insurer-specific tax handling",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "taxable": {
+                  "type": "boolean"
+                },
+                "notes": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": ["version", "effective_date", "configurations"]
+}

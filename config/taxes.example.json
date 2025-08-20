@@ -1,0 +1,68 @@
+{
+  "version": "1.0.0",
+  "effective_date": "2025-01-01",
+  "configurations": [
+    {
+      "province": "ON",
+      "discipline": "dental",
+      "taxable_service": false,
+      "tax_types": [],
+      "exemption_notes": "Dental services exempt from HST in Ontario"
+    },
+    {
+      "province": "ON",
+      "discipline": "massage",
+      "taxable_service": true,
+      "tax_types": ["HST"],
+      "exemption_notes": "HST applies unless prescribed by physician",
+      "insurer_specific": {
+        "sun_life": {
+          "taxable": false,
+          "notes": "Sun Life reimburses HST separately"
+        }
+      }
+    },
+    {
+      "province": "AB",
+      "discipline": "physiotherapy",
+      "taxable_service": true,
+      "tax_types": ["GST"],
+      "exemption_notes": "GST exempt if prescribed"
+    },
+    {
+      "province": "QC",
+      "discipline": "dental",
+      "taxable_service": false,
+      "tax_types": [],
+      "exemption_notes": "Services dentaires exempts de taxes"
+    },
+    {
+      "province": "QC",
+      "discipline": "chiropractic",
+      "taxable_service": true,
+      "tax_types": ["GST", "QST"],
+      "exemption_notes": "TPS/TVQ s'appliquent sauf prescription médicale"
+    },
+    {
+      "province": "BC",
+      "discipline": "psychology",
+      "taxable_service": true,
+      "tax_types": ["GST", "PST"],
+      "exemption_notes": "GST+PST unless medically necessary"
+    },
+    {
+      "province": "NS",
+      "discipline": "dental",
+      "taxable_service": false,
+      "tax_types": [],
+      "exemption_notes": "Dental services HST exempt"
+    },
+    {
+      "province": "MB",
+      "discipline": "optometry",
+      "taxable_service": false,
+      "tax_types": [],
+      "exemption_notes": "Eye exams PST exempt, GST applies to eyewear"
+    }
+  ]
+}

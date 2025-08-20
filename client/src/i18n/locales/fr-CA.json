@@ -1,0 +1,93 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "submit": "Soumettre",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "back": "Retour",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "close": "Fermer",
+    "search": "Rechercher",
+    "filter": "Filtrer",
+    "export": "Exporter",
+    "import": "Importer",
+    "download": "Télécharger",
+    "upload": "Téléverser",
+    "yes": "Oui",
+    "no": "Non"
+  },
+  "auth": {
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "signInToContinue": "Connectez-vous pour continuer",
+    "welcome": "Bienvenue"
+  },
+  "claims": {
+    "title": "Réclamations",
+    "newClaim": "Nouvelle réclamation",
+    "claimNumber": "Numéro de réclamation",
+    "patient": "Patient",
+    "provider": "Fournisseur",
+    "insurer": "Assureur",
+    "amount": "Montant",
+    "status": "Statut",
+    "serviceDate": "Date de service",
+    "submittedDate": "Date de soumission",
+    "description": "Description",
+    "procedureCodes": "Codes de procédure",
+    "attachments": "Pièces jointes",
+    "timeline": "Chronologie",
+    "statuses": {
+      "draft": "Brouillon",
+      "submitted": "Soumise",
+      "pending": "En attente",
+      "approved": "Approuvée",
+      "rejected": "Rejetée",
+      "paid": "Payée"
+    }
+  },
+  "patients": {
+    "title": "Patients",
+    "newPatient": "Nouveau patient",
+    "name": "Nom",
+    "dateOfBirth": "Date de naissance",
+    "healthCardNumber": "Numéro de carte santé",
+    "phone": "Téléphone",
+    "email": "Courriel",
+    "address": "Adresse"
+  },
+  "providers": {
+    "title": "Fournisseurs",
+    "newProvider": "Nouveau fournisseur",
+    "name": "Nom",
+    "discipline": "Discipline",
+    "licenseNumber": "Numéro de licence",
+    "phone": "Téléphone",
+    "email": "Courriel",
+    "address": "Adresse"
+  },
+  "privacy": {
+    "consent": "Je consens à la collecte et à l'utilisation de mes renseignements personnels sur la santé",
+    "privacyPolicy": "Politique de confidentialité",
+    "termsOfService": "Conditions d'utilisation",
+    "dataRetention": "Politique de conservation des données"
+  },
+  "provinces": {
+    "AB": "Alberta",
+    "BC": "Colombie-Britannique",
+    "MB": "Manitoba",
+    "NB": "Nouveau-Brunswick",
+    "NL": "Terre-Neuve-et-Labrador",
+    "NS": "Nouvelle-Écosse",
+    "NT": "Territoires du Nord-Ouest",
+    "NU": "Nunavut",
+    "ON": "Ontario",
+    "PE": "Île-du-Prince-Édouard",
+    "QC": "Québec",
+    "SK": "Saskatchewan",
+    "YT": "Yukon"
+  }
+}

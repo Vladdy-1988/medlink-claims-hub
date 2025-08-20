@@ -1,0 +1,42 @@
+Province,Program/Insurer,Discipline(s),Rail,Status,Priority,Notes
+National,CDAnet,Dental,ITRANS,sandbox,P0,Need live credentials and certification
+National,TELUS eClaims,"Allied Health (PT,OT,Chiro,Massage,etc)",OAuth API,sandbox,P0,Need client ID/secret and testing
+National,Sun Life Financial,All,Portal/API,todo,P1,Major insurer - portal automation needed
+National,Manulife Financial,All,Portal/API,todo,P1,Major insurer - portal automation needed
+National,Great-West Life,All,Portal/API,todo,P1,Now Canada Life - portal needed
+National,GreenShield Canada,All,Portal/API,todo,P1,Growing market share
+National,Blue Cross (various),All,Portal/API,partial,P1,Multiple provincial entities
+AB,Alberta Blue Cross,All,Portal/API,todo,P0,Major Alberta insurer
+AB,WCB Alberta,All,Portal,todo,P2,Workers compensation
+BC,WorkSafeBC,All,Portal,todo,P2,Workers compensation
+BC,Pacific Blue Cross,All,Portal/API,todo,P1,BC specific coverage
+ON,WSIB,All,Portal,todo,P2,Workers compensation - largest WCB
+ON,OHIP+,Pharmacy,Portal,todo,P3,Youth pharmacare
+QC,CNESST,All,Portal,todo,P2,Workers comp - French required
+QC,RAMQ,Medical,Portal,todo,P3,Provincial health insurance
+SK,WCB Saskatchewan,All,Portal,todo,P2,Workers compensation
+MB,WCB Manitoba,All,Portal,todo,P2,Workers compensation
+NS,WCB Nova Scotia,All,Portal,todo,P2,Workers compensation
+NB,WorkSafeNB,All,Portal,todo,P2,Bilingual required
+PE,WCB PEI,All,Portal,todo,P3,Small volume
+NL,WorkplaceNL,All,Portal,todo,P3,Workers compensation
+YT,WCB Yukon,All,Portal,todo,P3,Northern territory
+NT,WSCC,All,Portal,todo,P3,NWT/Nunavut combined
+NU,WSCC,All,Portal,todo,P3,NWT/Nunavut combined
+Federal,NIHB,All,Portal,todo,P1,Indigenous health benefits
+Federal,VAC,Veterans,Portal,todo,P2,Veterans Affairs
+Federal,RCMP,All,Portal/BlueCross,todo,P2,Often via provincial Blue Cross
+Federal,Federal Employee,All,Portal/SunLife,todo,P2,PSHCP via Sun Life
+All,Desjardins Insurance,All,Portal/API,todo,P1,Major Quebec insurer
+All,SSQ Insurance,All,Portal/API,todo,P2,Quebec focused
+All,Industrial Alliance,All,Portal/API,todo,P2,Life and health
+All,Empire Life,All,Portal,todo,P3,Smaller carrier
+All,Equitable Life,All,Portal,todo,P3,Now part of Desjardins
+All,RBC Insurance,All,Portal,todo,P3,Bank-owned insurer
+All,Johnston Group,All,Portal,todo,P2,Benefits administrator
+All,Maximum Benefit,All,Portal,todo,P3,TPA services
+All,ClaimSecure,All,Portal/API,todo,P2,Claims processor
+All,GroupHEALTH,All,Portal,todo,P3,Benefits management
+Special,IFHP,Refugees,Portal,todo,P2,Interim Federal Health Program
+Special,ODSP,Disabled,Portal,todo,P3,Ontario disability support
+Special,AISH,Disabled,Portal,todo,P3,Alberta disability support
