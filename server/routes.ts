@@ -87,8 +87,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // CSRF token endpoint
   app.get('/api/auth/csrf', authLimiter, (req: any, res) => {
-    const token = issueCSRFToken(res);
-    res.json({ csrfToken: token });
+    getCSRFToken(req, res);
   });
   
   // Apply CSRF protection to all state-changing routes (skip in dev)
@@ -845,7 +844,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mode: 'sandbox',
         settings: {
           providerId: testProvider.id,
-          licenseNumber: testProvider.licenseNumber
+          licenseNumber: testProvider.licenceNumber
         }
       });
 
@@ -856,7 +855,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'dental',
+        type: 'claim',
         status: 'draft',
         amount: '125.00',
         currency: 'CAD',
@@ -871,7 +870,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'dental',
+        type: 'claim',
         status: 'draft',
         amount: '87.13',
         currency: 'CAD',
@@ -886,7 +885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'medical',
+        type: 'claim',
         status: 'draft',
         amount: '149.99',
         currency: 'CAD', 
@@ -897,9 +896,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Test connectors with different outcome scenarios
       const results = {
-        cdanet_paid: { status: 'pending', jobId: null, error: null, amount: '125.00' },
-        cdanet_info: { status: 'pending', jobId: null, error: null, amount: '87.13' },
-        eclaims_denied: { status: 'pending', jobId: null, error: null, amount: '149.99' }
+        cdanet_paid: { status: 'pending', jobId: null as string | null, error: null as string | null, amount: '125.00' },
+        cdanet_info: { status: 'pending', jobId: null as string | null, error: null as string | null, amount: '87.13' },
+        eclaims_denied: { status: 'pending', jobId: null as string | null, error: null as string | null, amount: '149.99' }
       };
 
       // Test CDAnet with PAID outcome (amount ends .00)

@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
@@ -20,7 +20,7 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY . .
@@ -40,7 +40,7 @@ WORKDIR /app
 
 # Install production dependencies only
 COPY package*.json ./
-RUN npm ci --only=production && \
+RUN npm ci --only=production --ignore-scripts && \
     npm cache clean --force
 
 # Copy built assets
@@ -49,7 +49,11 @@ COPY --from=backend-builder /app/dist/index.js ./dist/
 
 # Copy necessary files
 COPY drizzle.config.ts ./
-COPY public ./public
+COPY shared ./shared
+COPY start.sh ./
+
+# Make startup script executable
+RUN chmod +x start.sh
 
 # Create uploads directory for local storage fallback
 RUN mkdir -p uploads
@@ -66,4 +70,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 5000
 
 # Start the application
-CMD ["node", "dist/index.js"]
+CMD ["./start.sh"]

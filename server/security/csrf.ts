@@ -49,17 +49,19 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
   
   // Validate tokens
   if (!cookieToken || !headerToken) {
-    return res.status(403).json({
+    res.status(403).json({
       error: 'CSRF token missing',
       message: 'Request requires CSRF token',
     });
+    return;
   }
   
   if (cookieToken !== headerToken) {
-    return res.status(403).json({
+    res.status(403).json({
       error: 'CSRF token invalid',
       message: 'CSRF token mismatch',
     });
+    return;
   }
   
   // Rotate token on successful validation (optional, for extra security)
