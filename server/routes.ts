@@ -683,7 +683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error testing connector:", error);
       res.status(500).json({ 
         valid: false,
-        message: error.message || "Connector test failed" 
+        message: (error as Error).message || "Connector test failed" 
       });
     }
   });
@@ -739,51 +739,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create test data quickly
       const testOrg = await storage.createOrganization({
         name: 'EDI Test Clinic',
-        type: 'clinic',
-        address: '123 Test Street',
-        city: 'Toronto', 
-        province: 'ON',
-        postalCode: 'M5V 3A3',
-        phone: '416-555-0123',
-        email: 'test@ediclinic.com'
+        externalId: 'edi-test-' + Date.now()
       });
 
       const testProvider = await storage.createProvider({
         orgId: testOrg.id,
         name: 'Dr. Test Provider',
-        licenseNumber: 'TEST123456',
-        specialty: 'General Practice',
-        phone: '416-555-0124',
-        email: 'provider@ediclinic.com',
-        address: '123 Test Street',
-        city: 'Toronto',
-        province: 'ON', 
-        postalCode: 'M5V 3A3'
+        discipline: 'General Practice',
+        licenceNumber: 'TEST123456'
       });
 
       const testPatient = await storage.createPatient({
         orgId: testOrg.id,
         name: 'Test Patient',
-        healthCardNumber: '9876543210',
-        dateOfBirth: '1985-03-20',
-        gender: 'female',
-        phone: '416-555-0125',
-        email: 'patient@example.com',
-        address: '456 Patient Ave',
-        city: 'Toronto',
-        province: 'ON',
-        postalCode: 'M4B 1B3'
+        dob: new Date('1985-03-20'),
+        identifiers: {
+          healthCardNumber: '9876543210',
+          gender: 'female'
+        }
       });
 
       const testInsurer = await storage.createInsurer({
         name: 'Test Insurance Co',
-        code: 'TIC',
-        rail: 'portal',
-        phone: '1-800-555-0100',
-        address: '789 Insurer Blvd',
-        city: 'Toronto',
-        province: 'ON',
-        postalCode: 'M1A 1A1'
+        rail: 'portal'
       });
 
       // Setup connector configs

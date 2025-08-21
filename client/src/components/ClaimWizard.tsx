@@ -282,7 +282,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select patient" />
                   </SelectTrigger>
                   <SelectContent>
-                    {patients && Array.isArray(patients) && (patients as Patient[]).map((patient: Patient) => (
+                    {patients && Array.isArray(patients) && patients.map((patient) => (
                       <SelectItem key={patient.id} value={patient.id}>
                         {patient.name}
                       </SelectItem>
@@ -302,7 +302,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providers && Array.isArray(providers) && (providers as Provider[]).map((provider: Provider) => (
+                    {providers && Array.isArray(providers) && providers.map((provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
                         {provider.name} {provider.discipline && `(${provider.discipline})`}
                       </SelectItem>
@@ -322,12 +322,9 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select insurer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {insurers && Array.isArray(insurers) && (insurers as Insurer[]).map((insurer: Insurer) => (
+                    {insurers && Array.isArray(insurers) && insurers.map((insurer) => (
                       <SelectItem key={insurer.id} value={insurer.id}>
                         {insurer.name}
-                        <Badge variant="secondary" className="ml-2 text-xs">
-                          {insurer.rail}
-                        </Badge>
                       </SelectItem>
                     ))}
                   </SelectContent>

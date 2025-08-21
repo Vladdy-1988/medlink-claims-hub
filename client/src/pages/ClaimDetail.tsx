@@ -12,6 +12,7 @@ import { ClaimTimeline } from "@/components/ClaimTimeline";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { FileText, Download, Edit2, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
+import type { Claim, Patient, Provider, Insurer, Attachment } from "@shared/schema";
 
 interface ClaimDetailProps {
   params: { id: string };
@@ -36,23 +37,29 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: claim, isLoading: claimLoading, error } = useQuery({
+  const { data: claim, isLoading: claimLoading, error } = useQuery<Claim>({
     queryKey: ["/api/claims", params.id],
     retry: false,
   });
 
-  const { data: patients } = useQuery({
+  const { data: patients } = useQuery<Patient[]>({
     queryKey: ["/api/patients"],
     retry: false,
   });
 
-  const { data: providers } = useQuery({
+  const { data: providers } = useQuery<Provider[]>({
     queryKey: ["/api/providers"],
     retry: false,
   });
 
-  const { data: insurers } = useQuery({
+  const { data: insurers } = useQuery<Insurer[]>({
     queryKey: ["/api/insurers"],
+    retry: false,
+  });
+
+  const { data: attachments } = useQuery<Attachment[]>({
+    queryKey: ["/api/attachments", params.id],
+    enabled: !!claim,
     retry: false,
   });
 
@@ -97,9 +104,9 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
     );
   }
 
-  const patient = patients?.find((p: any) => p.id === claim.patientId);
-  const provider = providers?.find((p: any) => p.id === claim.providerId);
-  const insurer = insurers?.find((i: any) => i.id === claim.insurerId);
+  const patient = patients?.find((p) => p.id === claim.patientId);
+  const provider = providers?.find((p) => p.id === claim.providerId);
+  const insurer = insurers?.find((i) => i.id === claim.insurerId);
 
   return (
     <>
@@ -119,7 +126,7 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
               </h1>
               <p className="text-muted-foreground mt-1">
                 {claim.type === 'preauth' ? 'Pre-Authorization' : 'Insurance Claim'} • 
-                Submitted {new Date(claim.createdAt).toLocaleDateString()}
+                Submitted {claim.createdAt ? new Date(claim.createdAt).toLocaleDateString() : 'Unknown'}
               </p>
             </div>
           </div>
@@ -152,12 +159,14 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Date of Birth:</span>
                         <span className="font-medium">
-                          {patient?.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString() : 'Not provided'}
+                          {patient?.dob ? new Date(patient.dob).toLocaleDateString() : 'Not provided'}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Health Card:</span>
-                        <span className="font-medium">{patient?.healthCardNumber || 'Not provided'}</span>
+                        <span className="font-medium">
+                          {(patient?.identifiers as any)?.healthCardNumber || 'Not provided'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -171,7 +180,7 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">License:</span>
-                        <span className="font-medium">{provider?.license || 'Not provided'}</span>
+                        <span className="font-medium">{provider?.licenceNumber || 'Not provided'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Discipline:</span>
@@ -209,27 +218,27 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Service Date:</span>
                         <span className="font-medium">
-                          {claim.serviceDate ? new Date(claim.serviceDate).toLocaleDateString() : 'Not provided'}
+                          {claim.appointmentId ? 'Appointment linked' : 'Not provided'}
                         </span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {claim.description && (
+                {claim.notes && (
                   <div>
-                    <h3 className="font-medium mb-3">Description</h3>
+                    <h3 className="font-medium mb-3">Notes</h3>
                     <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
-                      {claim.description}
+                      {claim.notes}
                     </p>
                   </div>
                 )}
 
-                {claim.codes && claim.codes.length > 0 && (
+                {claim.codes && Array.isArray(claim.codes) && (claim.codes as string[]).length > 0 && (
                   <div>
                     <h3 className="font-medium mb-3">Service Codes</h3>
                     <div className="flex flex-wrap gap-2">
-                      {claim.codes.map((code: string, index: number) => (
+                      {(claim.codes as string[]).map((code: string, index: number) => (
                         <Badge key={index} variant="secondary">
                           {code}
                         </Badge>
@@ -241,21 +250,21 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
             </Card>
 
             {/* Attachments */}
-            {claim.attachments && claim.attachments.length > 0 && (
+            {attachments && attachments.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle>Attachments</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {claim.attachments.map((attachment: any, index: number) => (
-                      <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                    {attachments.map((attachment) => (
+                      <div key={attachment.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
                           <FileText className="h-5 w-5 text-muted-foreground" />
                           <div>
-                            <p className="text-sm font-medium">{attachment.name}</p>
+                            <p className="text-sm font-medium">{attachment.kind}</p>
                             <p className="text-xs text-muted-foreground">
-                              {attachment.size ? `${(attachment.size / 1024).toFixed(1)} KB` : 'Unknown size'}
+                              {attachment.mime}
                             </p>
                           </div>
                         </div>
@@ -279,8 +288,13 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
               </CardHeader>
               <CardContent>
                 <ClaimTimeline 
-                  claimId={params.id}
-                  currentStatus={claim.status}
+                  claim={{
+                    id: claim.id,
+                    status: claim.status,
+                    createdAt: claim.createdAt,
+                    updatedAt: claim.updatedAt,
+                    notes: claim.notes || undefined
+                  }}
                 />
               </CardContent>
             </Card>

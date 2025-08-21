@@ -55,16 +55,10 @@ export function useNotifications() {
       });
 
       // Send subscription to server
-      await apiRequest('/api/push/subscribe', {
-        method: 'POST',
-        body: JSON.stringify({
-          endpoint: subscription.endpoint,
-          p256dhKey: (subscription as any).keys?.p256dh,
-          authKey: (subscription as any).keys?.auth,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      await apiRequest('/api/push/subscribe', 'POST', {
+        endpoint: subscription.endpoint,
+        p256dhKey: (subscription as any).keys?.p256dh,
+        authKey: (subscription as any).keys?.auth,
       });
 
       return subscription;
@@ -90,7 +84,7 @@ export function useNotifications() {
   // Send test notification
   const testNotificationMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/push/test', { method: 'POST' });
+      const response = await apiRequest('/api/push/test', 'POST');
       return await response.json();
     },
     onSuccess: (result: { sent: number; failed: number }) => {
@@ -126,12 +120,8 @@ export function useNotifications() {
           await subscription.unsubscribe();
           
           // Notify server
-          await apiRequest('/api/push/unsubscribe', {
-            method: 'POST',
-            body: JSON.stringify({ endpoint: subscription.endpoint }),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+          await apiRequest('/api/push/unsubscribe', 'POST', {
+            endpoint: subscription.endpoint
           });
         }
       }
