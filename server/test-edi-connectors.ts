@@ -16,7 +16,7 @@ export async function testEDIConnectors(storage: IStorage) {
     
     const testOrg = await storage.createOrganization({
       name: 'Test Medical Clinic',
-      type: 'clinic',
+
       address: '123 Test St',
       city: 'Toronto',
       province: 'ON',
@@ -28,7 +28,7 @@ export async function testEDIConnectors(storage: IStorage) {
     const testProvider = await storage.createProvider({
       orgId: testOrg.id,
       name: 'Dr. Jane Smith',
-      licenseNumber: 'MD123456',
+      licenceNumber: 'MD123456',
       specialty: 'Family Medicine',
       phone: '416-555-0124',
       email: 'dr.smith@medclinic.example.com',
@@ -41,7 +41,7 @@ export async function testEDIConnectors(storage: IStorage) {
     const testPatient = await storage.createPatient({
       orgId: testOrg.id,
       name: 'John Doe',
-      healthCardNumber: '1234567890',
+
       dateOfBirth: '1980-05-15',
       gender: 'male',
       phone: '416-555-0125',
@@ -52,6 +52,18 @@ export async function testEDIConnectors(storage: IStorage) {
       postalCode: 'M4B 1B3'
     });
 
+    // Create test insurer (using seed data instead as createInsurer doesn't exist)
+    const insurers = await storage.getInsurers();
+    const testInsurer = insurers[0]; // Use first available insurer
+    
+    if (!testInsurer) {
+      throw new Error('No insurers found in database. Run seed first.');
+    }
+    
+    console.log(`   ✅ Using existing insurer: ${testInsurer.name}`);
+    
+    // Skip insurer creation since we're using existing data
+    /*
     const testInsurer = await storage.createInsurer({
       name: 'Ontario Health Insurance Plan',
       code: 'OHIP',
@@ -61,6 +73,7 @@ export async function testEDIConnectors(storage: IStorage) {
       province: 'ON',
       postalCode: 'M7A 1R3'
     });
+    */
 
     // 2. Setup connector configurations
     console.log('2. Setting up connector configurations...');
@@ -85,7 +98,7 @@ export async function testEDIConnectors(storage: IStorage) {
       mode: 'sandbox',
       settings: {
         providerId: testProvider.id,
-        licenseNumber: testProvider.licenseNumber,
+        licenseNumber: testProvider.licenceNumber,
         facilityId: 'CLINIC001'
       }
     });
@@ -98,7 +111,7 @@ export async function testEDIConnectors(storage: IStorage) {
       patientId: testPatient.id,
       providerId: testProvider.id,
       insurerId: testInsurer.id,
-      type: 'treatment',
+      type: 'claim',
       status: 'draft',
       amount: '125.00',
       currency: 'CAD',
@@ -116,7 +129,7 @@ export async function testEDIConnectors(storage: IStorage) {
       patientId: testPatient.id,
       providerId: testProvider.id,
       insurerId: testInsurer.id,
-      type: 'treatment',
+      type: 'claim',
       status: 'draft',
       amount: '85.00',
       currency: 'CAD',
@@ -155,7 +168,7 @@ export async function testEDIConnectors(storage: IStorage) {
       console.log(`   📊 CDAnet job status: ${cdanetJob?.status}`);
       
     } catch (error) {
-      console.error('   ❌ CDAnet test failed:', error.message);
+      console.error('   ❌ CDAnet test failed:', error instanceof Error ? error.message : String(error));
     }
 
     // 5. Test TELUS eClaims Connector
@@ -182,7 +195,7 @@ export async function testEDIConnectors(storage: IStorage) {
       console.log(`   📊 eClaims job status: ${eClaimsJob?.status}`);
       
     } catch (error) {
-      console.error('   ❌ eClaims test failed:', error.message);
+      console.error('   ❌ eClaims test failed:', error instanceof Error ? error.message : String(error));
     }
 
     // 6. Test connector events tracking
@@ -220,7 +233,7 @@ export async function testEDIConnectors(storage: IStorage) {
     console.error('\n❌ EDI Connector Test Failed:', error);
     return {
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }

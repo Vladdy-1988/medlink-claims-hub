@@ -14,7 +14,7 @@ export async function apiRequest(
   method: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const headers = data ? { "Content-Type": "application/json" } : {};
+  const headers: HeadersInit = data ? { "Content-Type": "application/json" } : {};
   const headersWithCSRF = addCSRFHeader(headers);
   
   const res = await fetch(url, {

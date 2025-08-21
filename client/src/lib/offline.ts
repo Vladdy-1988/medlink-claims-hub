@@ -182,7 +182,7 @@ export class OfflineManager {
           } else {
             await idbManager.updateSyncItem(item.id, {
               retryCount,
-              lastError: error.message,
+              lastError: error instanceof Error ? error.message : String(error),
             });
           }
         }

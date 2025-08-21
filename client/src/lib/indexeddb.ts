@@ -17,6 +17,10 @@ interface MedLinkClaimsDB extends DBSchema {
       createdAt: Date;
       updatedAt: Date;
     };
+    indexes: {
+      status: string;
+      createdAt: Date;
+    };
   };
   preauths: {
     key: string;
@@ -152,13 +156,13 @@ class IndexedDBManager {
 
   async getDraftClaims(): Promise<any[]> {
     const db = this.ensureDB();
-    const claims = await db.getAllFromIndex('claims', 'status', 'draft');
+    const claims = await db.getAllFromIndex('claims', 'status', 'draft' as IDBValidKey);
     return claims.map(claim => claim.data);
   }
 
   async getPendingSyncClaims(): Promise<any[]> {
     const db = this.ensureDB();
-    const claims = await db.getAllFromIndex('claims', 'status', 'pending_sync');
+    const claims = await db.getAllFromIndex('claims', 'status', 'pending_sync' as IDBValidKey);
     return claims;
   }
 

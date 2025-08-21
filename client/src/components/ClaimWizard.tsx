@@ -282,7 +282,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select patient" />
                   </SelectTrigger>
                   <SelectContent>
-                    {patients && Array.isArray(patients) && patients.map((patient) => (
+                    {patients && Array.isArray(patients) && (patients as Patient[]).map((patient: Patient) => (
                       <SelectItem key={patient.id} value={patient.id}>
                         {patient.name}
                       </SelectItem>
@@ -302,7 +302,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providers && Array.isArray(providers) && providers.map((provider) => (
+                    {providers && Array.isArray(providers) && (providers as Provider[]).map((provider: Provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
                         {provider.name} {provider.discipline && `(${provider.discipline})`}
                       </SelectItem>
@@ -322,7 +322,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select insurer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {insurers && Array.isArray(insurers) && insurers.map((insurer) => (
+                    {insurers && Array.isArray(insurers) && (insurers as Insurer[]).map((insurer: Insurer) => (
                       <SelectItem key={insurer.id} value={insurer.id}>
                         {insurer.name}
                       </SelectItem>
