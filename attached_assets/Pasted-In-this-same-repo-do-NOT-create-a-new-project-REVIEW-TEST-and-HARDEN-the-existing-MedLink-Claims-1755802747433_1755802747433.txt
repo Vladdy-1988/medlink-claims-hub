@@ -1,0 +1,94 @@
+In this same repo, do NOT create a new project; REVIEW, TEST, and HARDEN the existing MedLink Claims Hub. Scope is QA + minimal fixes + Canada-wide operational readiness. Keep auth/PWA intact.
+
+GOALS
+- Full repo audit (structure, scripts, deps), type/lint fixes, security sanity.
+- Automated tests (unit/API/e2e), offline-mode tests, build & deploy checks.
+- Canada-wide operations gap analysis + concrete patch plan:
+  - Rails: CDAnet/ITRANS (dental), TELUS eClaims (allied), provincial WCB/WSIB/WorkSafe portals, Alberta Blue Cross (ABC), NIHB, VAC/RCMP portals.
+  - Compliance: PIPEDA + provincial laws (AB HIA, ON PHIPA, BC PIPA, SK HIPA, MB PHIA, QC Law 25, NS PIIDPA, NB RTIPPA, NL PHIA, PEI FOIPP, YT/NT/NU equivalents).
+  - Bilingual (EN/FR) readiness for Quebec (labels, consent templates).
+  - Tax config scaffolding (GST/HST/PST flags by province/discipline; no hard-coded rates).
+- Produce a “Canada Readiness Report” (markdown) + “Coverage Matrix” (CSV/JSON) + test logs.
+
+CONSTRAINTS
+- Make only LOW-RISK code changes needed to pass tests and fix obvious issues (null checks, schema mismatches, CORS/cookie flags, missing scripts, minor UI selectors, etc.).
+- Do NOT implement real EDI calls; keep sandbox. For anything bigger, open TODOs and include in the report.
+
+PHASE A — INVENTORY & START
+1) Read package.json/workspaces and list scripts. Ensure `npm run dev`, `build`, `test` exist (root and packages).
+2) Ensure Secrets are read (JWT_SECRET, STORAGE_DIR, CONNECTORS_MODE, etc.). If missing, surface a checklist in the report (don’t hardcode).
+3) Start app: run `npm run prisma:migrate && npm run prisma:seed && npm run dev`. Output the Web Preview URL.
+
+PHASE B — STATIC CHECKS
+1) Type check: `npx tsc --noEmit` (or script). Fix only safe TS errors.
+2) Lint/format: run lint/format; fix simple issues (unused imports, obvious any → typed).
+3) Dep sanity: flag high-risk deps, duplicate versions, or missing locks.
+
+PHASE C — TESTS
+1) Unit/API (Supertest):
+   - Auth handshake works; protected route rejects unauth.
+   - GET /claims returns seeded data for billing/admin; RBAC blocks provider from /admin.
+   - Upload flow: presign + consume stores Attachment.
+2) E2E (Playwright):
+   - Login (mock Replit Auth if needed) → New claim via “portal” with a small dummy file → appears in /claims as “submitted” → detail timeline shows Created → Submitted.
+   - Offline test: setOfflineMode(true) at /claims/new, fill steps, confirm autosave indicator; go online → verify sync to server.
+3) Output junit-style summaries and paste results into the report.
+
+PHASE D — PWA/BUILD
+1) Verify manifest, SW registration, installability. Run Lighthouse (desktop) and record Performance/Accessibility/Best Practices.
+2) Build web/api bundles; verify a clean start post-build. Document commands.
+
+PHASE E — SECURITY & PRIVACY SANITY
+1) Verify: httpOnly cookies (Secure+SameSite=Lax in prod), CORS restricted to ALLOWED_ORIGINS, CSRF on mutating routes, input validation (zod) on APIs, basic rate limiting, file-type/size checks, AV scan hook TODO present, no PHI in logs.
+2) Ensure encryption helper exists for secrets-at-rest if implemented; if not, open a TODO with a proposed file path and API.
+
+PHASE F — CANADA-WIDE OPERATIONS (GAP ANALYSIS + SCAFFOLD)
+Create two artifacts:
+- `docs/canada_readiness.md`
+- `docs/coverage_matrix.csv` + `docs/coverage_matrix.json`
+
+Include:
+
+1) Rails & Status (per program/insurer/province):
+   - Dental: CDAnet via ITRANS (national) — status: sandbox adapter present? live path flagged?
+   - Allied: TELUS eClaims (national) — status: sandbox adapter present? OAuth stub present?
+   - Provincial workers’ comp: ON WSIB, AB WCB, BC WorkSafeBC, SK WCB, MB WCB, NS WCB, NB WorkSafeNB, PEI WCB, NL WorkplaceNL, YT WCB, NT/NU WSCC — status: Portal rail available? Tasks defined?
+   - Federal: NIHB, VAC, RCMP (often via Blue Cross portals) — status: Portal rail + task list?
+   - Alberta Blue Cross (ABC) — status: Portal rail + tracking.
+   - For each row: {Province, Program/Insurer, Discipline(s), Rail (cdanet|eclaims|portal), Status (supported|sandbox|todo), Notes}.
+
+2) Compliance checklist (per province):
+   - Reference law; confirm we have: consent/AOB capture, access logs (AuditEvent), retention toggle, breach log placeholder, “download my data”/“delete” request hooks (docs/UI stubs ok), privacy policy links, French templates for QC.
+   - Output a ✅/⚠️/❌ matrix with short actions.
+
+3) Bilingual/i18n:
+   - Check i18n scaffold; if missing, add minimal i18n plumbing (EN default, FR-CA fallback) for UI strings + consent templates. Do NOT translate everything; provide a small sample and a translation key map.
+
+4) Tax config scaffold:
+   - Add a JSON-driven tax matrix file (no rates) at `config/taxes.schema.json` and `config/taxes.example.json` with fields: {province, discipline, taxable_service:boolean, tax_type:'GST'|'HST'|'PST'|'QST'|null}. Wire a validator to prevent issuing invoices with undefined tax config (warn only).
+
+5) Code catalogs:
+   - Confirm catalog loaders exist (dental procedure codes, allied service types). If absent, add placeholders + versioning and validators that check presence (not values).
+
+6) Onboarding checklists:
+   - Generate per-discipline tasks (denturist, hygienist, physio, chiro, massage, psychology, audiology, optician/optometrist if applicable): e.g., “Upload ITRANS cert”, “Add TELUS Client ID/Secret”, “Verify insurer enrollments”, “Banking info for remittances”. Store in DB if model exists; else create minimal seed data and Settings UI to mark done.
+
+PHASE G — MINIMAL, SAFE PATCHES
+- Only implement low-risk scaffolds: i18n minimal keys, tax schema files, portal task lists, missing validators, missing scripts, RBAC guards, small UI toggles for EN/FR and province selection on org.
+- DO NOT integrate real live EDI; keep CONNECTORS_MODE=sandbox.
+
+PHASE H — DELIVERABLES
+1) Post:
+   - Preview URL
+   - Typecheck/lint/test outputs
+   - Lighthouse summary
+   - `docs/canada_readiness.md` (sections: Exec Summary, Major Risks P0/P1, Coverage Matrix snapshot, Compliance matrix, Action plan with estimates)
+   - `docs/coverage_matrix.csv` and `.json`
+   - List of patches made (files + 1-line summary)
+2) Open clear TODOs with file paths for any non-trivial work (e.g., ITRANS live SDK call sites, TELUS OAuth flows).
+3) If anything blocks running locally (ports, env, etc.), fix if trivial; otherwise, document exact steps.
+
+ACCEPTANCE
+- App starts, tests pass (or we added minimal tests to make core flows green).
+- E2E: login → new claim (portal) → appears in list → detail timeline ok → offline draft test passes.
+- Canada artifacts exist and are useful, with a concise action plan to reach “fully operational across Canada” using CDAnet/TELUS + portal rails for provincial/federal programs.
