@@ -10,6 +10,7 @@ import {
   pgEnum,
   uuid,
   boolean,
+  integer,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -35,6 +36,7 @@ export const users = pgTable("users", {
   role: varchar("role").notNull().default('provider'), // 'provider', 'billing', 'admin'
   orgId: uuid("org_id").references(() => organizations.id),
   notificationsEnabled: boolean("notifications_enabled").default(false),
+  preferredLanguage: varchar("preferred_language", { length: 5 }), // User's preferred language (overrides org default)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -57,7 +59,16 @@ export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
   externalId: varchar("external_id", { length: 255 }).unique(),
+  province: varchar("province", { length: 2 }), // ON, QC, BC, etc.
+  preferredLanguage: varchar("preferred_language", { length: 5 }).default('en-CA'), // en-CA or fr-CA
+  // Quebec Law 25 fields
+  privacyOfficerName: varchar("privacy_officer_name"),
+  privacyOfficerEmail: varchar("privacy_officer_email"),
+  dataRetentionDays: integer("data_retention_days").default(2555), // ~7 years default
+  privacyContactUrl: varchar("privacy_contact_url"),
+  minimizeLogging: boolean("minimize_logging").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const patients = pgTable("patients", {
@@ -122,6 +133,9 @@ export const claims = pgTable("claims", {
   notes: text("notes"),
   referenceNumber: varchar("reference_number"),
   externalId: varchar("external_id"), // EDI connector external reference
+  // Portal submission tracking
+  portalReferenceNumber: varchar("portal_reference_number"), // External ref from WCB/WSIB portal
+  portalSubmissionDate: timestamp("portal_submission_date"), // When submitted to portal
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

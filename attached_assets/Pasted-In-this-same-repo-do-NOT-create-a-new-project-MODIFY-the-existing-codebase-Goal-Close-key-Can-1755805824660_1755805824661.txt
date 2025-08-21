@@ -1,0 +1,40 @@
+In this same repo, do NOT create a new project; MODIFY the existing codebase.
+
+Goal: Close key Canada-wide gaps: Quebec Law 25 scaffolding, bilingual keys, provincial WCB/WSIB/WorkSafe portals as "portal rails", and complete the coverage matrix.
+
+Tasks:
+1) Quebec Law 25 scaffolding
+- Org Settings → Privacy:
+  - Fields: Privacy Officer name/email, Data Retention policy (days), Contact URL.
+  - Toggle: “Minimize personal data in logs” (on by default).
+- Add endpoints:
+  - GET /privacy/export-my-data (stub JSON of a test patient) and DELETE /privacy/delete-my-data (admin-only stub; TODO label).
+- Audit: log privacy events (export/delete requests).
+- Add banner in Settings if org province=QC and Privacy Officer not set.
+
+2) Bilingual (EN/FR-CA)
+- Add minimal i18n scaffolding with EN default, FR-CA fallback.
+- Provide FR translations for: navigation labels, claim statuses, consent/AOB template labels, and key buttons.
+- Allow per-org preferred language; remember user preference.
+
+3) Provincial WCB/WSIB/WorkSafe portal rails
+- Seed and enable portal templates for: ON WSIB, AB WCB, BC WorkSafeBC, SK WCB, MB WCB, NS WCB, NB WorkSafeNB, PEI WCB, NL WorkplaceNL, YT WCB, NT/NU WSCC.
+- On Claim detail when connector='portal' and program is one above:
+  - Show guided checklist (Prepare PDFs, Log into portal, Enter claim, Upload docs, Submit, Record reference).
+  - Field to store external reference # and submission date; reflected in timeline.
+
+4) Coverage matrix completion
+- Ensure `docs/coverage_matrix.json` contains rows for all 43 programs you identified (dental CDAnet, TELUS eClaims allied, provincial WCBs, ABC, NIHB, VAC/RCMP). If missing, append placeholders with status 'todo' and notes.
+- Admin Coverage Dashboard: verify filters/render with the new rows.
+
+5) Taxes config scaffold
+- Add `config/taxes.example.json` covering all provinces with shape:
+  { "province":"QC","discipline":"denturist","tax_type":"QST+GST","taxable_service":true }
+- Validate on invoice generation: if tax config missing for org province+discipline, show non-blocking warning.
+
+Acceptance:
+- Privacy settings UI present; Law 25 stubs exist; audit events recorded.
+- FR labels available; language switch persists.
+- Portal rails checklists appear for WCB/WSIB programs; external refs recorded.
+- Coverage dashboard shows all programs (≥43 rows) and filters still work.
+- Taxes schema files exist; warning appears when config missing.

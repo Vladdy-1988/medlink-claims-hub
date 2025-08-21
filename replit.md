@@ -19,6 +19,14 @@ MedLink Claims Hub is a secure, installable Progressive Web App (PWA) for health
 - **Health Checks**: Standard /healthz and /readyz endpoints for monitoring
 All security modules integrated into main server architecture with development mode bypasses.
 
+**August 21, 2025 (Canada-Wide Features)**: Implemented comprehensive Canada-wide compliance and portal integration features:
+- **Quebec Law 25 Compliance**: Added privacy officer designation fields (name, email), data retention policy management (default 7 years/2555 days), and privacy contact URL tracking
+- **Provincial Support**: Added province field to organizations with full Canadian provincial/territorial dropdown
+- **Language Preferences**: Bilingual support (English/French) at both organization and user levels with proper preference cascading
+- **Portal Integration Tracking**: Added portal reference number and submission date fields to claims for WCB/WSIB integration
+- **UI Updates**: Enhanced Settings page with Privacy & Compliance section, integrated language selectors, and provincial selection
+All features successfully integrated into database schema and UI components.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

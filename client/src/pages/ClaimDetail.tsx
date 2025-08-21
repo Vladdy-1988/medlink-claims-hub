@@ -223,6 +223,30 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                       </div>
                     </div>
                   </div>
+                  
+                  {(claim.portalReferenceNumber || claim.portalSubmissionDate) && (
+                    <div>
+                      <h3 className="font-medium mb-3">Portal Submission</h3>
+                      <div className="space-y-2 text-sm">
+                        {claim.portalReferenceNumber && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Portal Reference:</span>
+                            <span className="font-medium">{claim.portalReferenceNumber}</span>
+                          </div>
+                        )}
+                        {claim.portalSubmissionDate && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Submitted:</span>
+                            <span className="font-medium">
+                              {typeof claim.portalSubmissionDate === 'string' 
+                                ? new Date(claim.portalSubmissionDate).toLocaleDateString('en-CA')
+                                : (claim.portalSubmissionDate as Date).toLocaleDateString('en-CA')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {claim.notes && (
@@ -234,13 +258,13 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                   </div>
                 )}
 
-                {claim.codes && Array.isArray(claim.codes) && (claim.codes as string[]).length > 0 && (
+                {claim.codes && Array.isArray(claim.codes) && claim.codes.length > 0 && (
                   <div>
                     <h3 className="font-medium mb-3">Service Codes</h3>
                     <div className="flex flex-wrap gap-2">
-                      {(claim.codes as string[]).map((code: string, index: number) => (
+                      {claim.codes.map((code: any, index: number) => (
                         <Badge key={index} variant="secondary">
-                          {code}
+                          {String(code)}
                         </Badge>
                       ))}
                     </div>
@@ -291,8 +315,8 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                   claim={{
                     id: claim.id,
                     status: claim.status,
-                    createdAt: claim.createdAt,
-                    updatedAt: claim.updatedAt,
+                    createdAt: typeof claim.createdAt === 'string' ? claim.createdAt : (claim.createdAt as Date).toISOString(),
+                    updatedAt: typeof claim.updatedAt === 'string' ? claim.updatedAt : (claim.updatedAt as Date).toISOString(),
                     notes: claim.notes || undefined
                   }}
                 />

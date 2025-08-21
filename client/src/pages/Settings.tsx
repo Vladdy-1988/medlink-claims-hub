@@ -35,12 +35,19 @@ export default function Settings() {
     phone: '',
     specialty: '',
     licenseNumber: '',
+    preferredLanguage: 'en-CA',
   });
   const [organizationData, setOrganizationData] = useState({
     name: '',
     address: '',
     phone: '',
     website: '',
+    province: '',
+    preferredLanguage: 'en-CA',
+    privacyOfficerName: '',
+    privacyOfficerEmail: '',
+    dataRetentionDays: 2555,
+    privacyContactUrl: '',
   });
   const [notificationSettings, setNotificationSettings] = useState({
     emailNotifications: true,
@@ -74,6 +81,7 @@ export default function Settings() {
         phone: '',
         specialty: '',
         licenseNumber: '',
+        preferredLanguage: user.preferredLanguage || 'en-CA',
       });
     }
   }, [user]);
@@ -171,6 +179,20 @@ export default function Settings() {
                       data-testid="input-license"
                     />
                   </div>
+
+                  <div>
+                    <Label htmlFor="userLanguage">Preferred Language</Label>
+                    <select
+                      id="userLanguage"
+                      value={profileData.preferredLanguage}
+                      onChange={(e) => setProfileData(prev => ({ ...prev, preferredLanguage: e.target.value }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="select-user-language"
+                    >
+                      <option value="en-CA">English</option>
+                      <option value="fr-CA">Français</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="flex justify-end">
@@ -235,6 +257,103 @@ export default function Settings() {
                       data-testid="input-org-website"
                     />
                   </div>
+
+                  <div>
+                    <Label htmlFor="orgProvince">Province</Label>
+                    <select
+                      id="orgProvince"
+                      value={organizationData.province}
+                      onChange={(e) => setOrganizationData(prev => ({ ...prev, province: e.target.value }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="select-org-province"
+                    >
+                      <option value="">Select Province</option>
+                      <option value="AB">Alberta</option>
+                      <option value="BC">British Columbia</option>
+                      <option value="MB">Manitoba</option>
+                      <option value="NB">New Brunswick</option>
+                      <option value="NL">Newfoundland and Labrador</option>
+                      <option value="NS">Nova Scotia</option>
+                      <option value="NT">Northwest Territories</option>
+                      <option value="NU">Nunavut</option>
+                      <option value="ON">Ontario</option>
+                      <option value="PE">Prince Edward Island</option>
+                      <option value="QC">Quebec</option>
+                      <option value="SK">Saskatchewan</option>
+                      <option value="YT">Yukon</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="orgLanguage">Preferred Language</Label>
+                    <select
+                      id="orgLanguage"
+                      value={organizationData.preferredLanguage}
+                      onChange={(e) => setOrganizationData(prev => ({ ...prev, preferredLanguage: e.target.value }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="select-org-language"
+                    >
+                      <option value="en-CA">English</option>
+                      <option value="fr-CA">Français</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quebec Law 25 Compliance Fields */}
+                <Separator />
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Privacy & Compliance</h3>
+                  
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="privacyOfficerName">Privacy Officer Name</Label>
+                      <Input
+                        id="privacyOfficerName"
+                        value={organizationData.privacyOfficerName}
+                        onChange={(e) => setOrganizationData(prev => ({ ...prev, privacyOfficerName: e.target.value }))}
+                        placeholder="Name of designated privacy officer"
+                        data-testid="input-privacy-officer-name"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="privacyOfficerEmail">Privacy Officer Email</Label>
+                      <Input
+                        id="privacyOfficerEmail"
+                        type="email"
+                        value={organizationData.privacyOfficerEmail}
+                        onChange={(e) => setOrganizationData(prev => ({ ...prev, privacyOfficerEmail: e.target.value }))}
+                        placeholder="privacy@example.com"
+                        data-testid="input-privacy-officer-email"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="dataRetentionDays">Data Retention (Days)</Label>
+                      <Input
+                        id="dataRetentionDays"
+                        type="number"
+                        value={organizationData.dataRetentionDays}
+                        onChange={(e) => setOrganizationData(prev => ({ ...prev, dataRetentionDays: parseInt(e.target.value) || 2555 }))}
+                        min="365"
+                        max="3650"
+                        data-testid="input-data-retention"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">Quebec requires 7 years (2555 days) minimum</p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="privacyContactUrl">Privacy Policy URL</Label>
+                      <Input
+                        id="privacyContactUrl"
+                        type="url"
+                        value={organizationData.privacyContactUrl}
+                        onChange={(e) => setOrganizationData(prev => ({ ...prev, privacyContactUrl: e.target.value }))}
+                        placeholder="https://example.com/privacy"
+                        data-testid="input-privacy-url"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-end">
@@ -287,7 +406,7 @@ export default function Settings() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={unsubscribeFromNotifications}
+                              onClick={() => unsubscribeFromNotifications()}
                               disabled={isUnsubscribing}
                               data-testid="button-disable-notifications"
                             >
@@ -296,7 +415,7 @@ export default function Settings() {
                           ) : (
                             <Button
                               size="sm"
-                              onClick={subscribeToNotifications}
+                              onClick={() => subscribeToNotifications()}
                               disabled={isSubscribing}
                               data-testid="button-enable-notifications"
                             >
@@ -317,7 +436,7 @@ export default function Settings() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={sendTestNotification}
+                            onClick={() => sendTestNotification()}
                             disabled={isSendingTest}
                             data-testid="button-test-notification"
                           >
