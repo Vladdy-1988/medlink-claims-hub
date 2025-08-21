@@ -8,6 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/hooks/useAuth";
 import { handleSSOLogin } from "@/lib/ssoHandler";
 import { useEffect } from "react";
+import { initializeCSRF } from "@/lib/csrf";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
@@ -49,8 +50,11 @@ function Router() {
   // PRODUCTION MODE ONLY - Normal authentication
   const { isAuthenticated, isLoading } = useAuth();
 
-  // Handle SSO login on component mount
+  // Handle SSO login and CSRF initialization on component mount
   useEffect(() => {
+    // Initialize CSRF token
+    initializeCSRF().catch(console.error);
+    
     try {
       handleSSOLogin();
     } catch (error) {

@@ -22,15 +22,34 @@ import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, inse
 import { z } from "zod";
 import { PushNotificationService } from "./pushService";
 import { handleSSOLogin, configureCORS } from "./ssoAuth";
+import { csrfProtection, getCSRFToken, issueCSRFToken } from "./security/csrf";
+import { authLimiter, uploadLimiter, connectorLimiter, apiLimiter } from "./security/rateLimiter";
+import { configureSecurityHeaders, additionalSecurityHeaders } from "./security/headers";
+import { getCORSMiddleware } from "./security/cors";
+import { logger, requestLogger } from "./security/logger";
+import { healthCheck, readinessCheck } from "./security/healthChecks";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Apply security headers first
+  app.use(configureSecurityHeaders());
+  
+  // Apply CORS middleware
+  app.use(getCORSMiddleware());
+  
+  // Request logging (PHI-safe)
+  app.use(requestLogger);
+  
+  // Health check routes (no auth/CSRF required)
+  app.get('/healthz', healthCheck);
+  app.get('/readyz', readinessCheck);
+  
   // Configure CORS for SSO (only for SSO endpoint)
   app.use('/auth/sso', cors(configureCORS()));
 
   // SSO login endpoint (before regular auth middleware)
   app.post('/auth/sso', handleSSOLogin);
 
-  // Health check route (no auth required)
+  // Legacy health check route
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
@@ -65,8 +84,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
+  // CSRF token endpoint
+  app.get('/api/auth/csrf', authLimiter, (req: any, res) => {
+    const token = issueCSRFToken(res);
+    res.json({ csrfToken: token });
+  });
+  
+  // Apply CSRF protection to all state-changing routes (skip in dev)
+  if (process.env.NODE_ENV !== 'development') {
+    app.use(csrfProtection);
+  }
+  
   // Auth routes
-  app.get('/api/auth/user', async (req: any, res) => {
+  app.get('/api/auth/user', authLimiter, async (req: any, res) => {
     // Development mode bypass for Replit preview
     if (process.env.NODE_ENV === 'development' && !req.isAuthenticated()) {
       // Create a development user
@@ -247,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Claims API
-  app.get('/api/claims', devAuth(isAuthenticated), async (req: any, res) => {
+  app.get('/api/claims', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -262,7 +292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/claims/:id', devAuth(isAuthenticated), async (req: any, res) => {
+  app.get('/api/claims/:id', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const claim = await storage.getClaim(req.params.id);
       if (!claim) {
@@ -287,7 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/claims', devAuth(isAuthenticated), async (req: any, res) => {
+  app.post('/api/claims', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -314,7 +344,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/claims/:id', devAuth(isAuthenticated), async (req: any, res) => {
+  app.patch('/api/claims/:id', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const claim = await storage.getClaim(req.params.id);
       if (!claim) {
@@ -402,7 +432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File upload endpoints
-  app.post('/api/objects/upload', devAuth(isAuthenticated), async (req: any, res) => {
+  app.post('/api/objects/upload', uploadLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
@@ -413,7 +443,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/attachments', devAuth(isAuthenticated), async (req: any, res) => {
+  app.post('/api/attachments', uploadLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {

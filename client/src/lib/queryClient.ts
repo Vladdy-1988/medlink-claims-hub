@@ -7,14 +7,19 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+import { addCSRFHeader } from './csrf';
+
 export async function apiRequest(
   url: string,
   method: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers = data ? { "Content-Type": "application/json" } : {};
+  const headersWithCSRF = addCSRFHeader(headers);
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: headersWithCSRF,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
