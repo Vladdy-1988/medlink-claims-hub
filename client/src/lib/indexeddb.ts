@@ -80,9 +80,7 @@ class IndexedDBManager {
           // Claims store
           if (!db.objectStoreNames.contains('claims')) {
             const claimsStore = db.createObjectStore('claims', { keyPath: 'id' });
-            // @ts-expect-error - IDB type inference issue with createIndex
             claimsStore.createIndex('status', 'status');
-            // @ts-expect-error - IDB type inference issue with createIndex
             claimsStore.createIndex('createdAt', 'createdAt');
           }
 
@@ -156,13 +154,13 @@ class IndexedDBManager {
 
   async getDraftClaims(): Promise<any[]> {
     const db = this.ensureDB();
-    const claims = await db.getAllFromIndex('claims', 'status', 'draft' as IDBValidKey);
+    const claims = await db.getAllFromIndex('claims', 'status', 'draft');
     return claims.map(claim => claim.data);
   }
 
   async getPendingSyncClaims(): Promise<any[]> {
     const db = this.ensureDB();
-    const claims = await db.getAllFromIndex('claims', 'status', 'pending_sync' as IDBValidKey);
+    const claims = await db.getAllFromIndex('claims', 'status', 'pending_sync');
     return claims;
   }
 
@@ -326,7 +324,6 @@ class IndexedDBManager {
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
 
     // Clean up old synced claims
-    // @ts-expect-error - IDB type inference issue with getAllFromIndex
     const syncedClaims = await db.getAllFromIndex('claims', 'status', 'synced');
     for (const claim of syncedClaims) {
       if (claim.updatedAt < cutoffDate) {

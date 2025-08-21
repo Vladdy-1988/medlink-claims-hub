@@ -16,40 +16,20 @@ export async function testEDIConnectors(storage: IStorage) {
     
     const testOrg = await storage.createOrganization({
       name: 'Test Medical Clinic',
-
-      address: '123 Test St',
-      city: 'Toronto',
-      province: 'ON',
-      postalCode: 'M5V 3A3',
-      phone: '416-555-0123',
-      email: 'test@medclinic.example.com'
+      province: 'ON'
     });
 
     const testProvider = await storage.createProvider({
       orgId: testOrg.id,
       name: 'Dr. Jane Smith',
       licenceNumber: 'MD123456',
-      specialty: 'Family Medicine',
-      phone: '416-555-0124',
-      email: 'dr.smith@medclinic.example.com',
-      address: '123 Test St',
-      city: 'Toronto',
-      province: 'ON',
-      postalCode: 'M5V 3A3'
+      discipline: 'Family Medicine'
     });
 
     const testPatient = await storage.createPatient({
       orgId: testOrg.id,
       name: 'John Doe',
-
-      dateOfBirth: '1980-05-15',
-      gender: 'male',
-      phone: '416-555-0125',
-      email: 'john.doe@example.com',
-      address: '456 Patient Ave',
-      city: 'Toronto',
-      province: 'ON',
-      postalCode: 'M4B 1B3'
+      dob: new Date('1980-05-15')
     });
 
     // Create test insurer (using seed data instead as createInsurer doesn't exist)

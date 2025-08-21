@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -104,15 +104,15 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
     return () => clearInterval(saveInterval);
   }, [claimData]);
 
-  const { data: patients, isLoading: loadingPatients } = useQuery({
+  const { data: patients, isLoading: loadingPatients } = useQuery<Patient[]>({
     queryKey: ['/api/patients'],
   });
 
-  const { data: providers, isLoading: loadingProviders } = useQuery({
+  const { data: providers, isLoading: loadingProviders } = useQuery<Provider[]>({
     queryKey: ['/api/providers'],
   });
 
-  const { data: insurers, isLoading: loadingInsurers } = useQuery({
+  const { data: insurers, isLoading: loadingInsurers } = useQuery<Insurer[]>({
     queryKey: ['/api/insurers'],
   });
 
@@ -282,7 +282,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select patient" />
                   </SelectTrigger>
                   <SelectContent>
-                    {patients && Array.isArray(patients) && (patients as Patient[]).map((patient: Patient) => (
+                    {patients?.map((patient) => (
                       <SelectItem key={patient.id} value={patient.id}>
                         {patient.name}
                       </SelectItem>
@@ -302,7 +302,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providers && Array.isArray(providers) && (providers as Provider[]).map((provider: Provider) => (
+                    {providers?.map((provider) => (
                       <SelectItem key={provider.id} value={provider.id}>
                         {provider.name} {provider.discipline && `(${provider.discipline})`}
                       </SelectItem>
@@ -322,7 +322,7 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     <SelectValue placeholder="Select insurer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {insurers && Array.isArray(insurers) && (insurers as Insurer[]).map((insurer: Insurer) => (
+                    {insurers?.map((insurer) => (
                       <SelectItem key={insurer.id} value={insurer.id}>
                         {insurer.name}
                       </SelectItem>
