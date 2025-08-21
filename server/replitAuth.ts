@@ -72,6 +72,12 @@ async function upsertUser(
 }
 
 export async function setupAuth(app: Express) {
+  // COMPLETELY SKIP AUTH SETUP IN DEVELOPMENT
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔒 Development mode: Skipping Replit Auth setup entirely');
+    return;
+  }
+  
   app.set("trust proxy", 1);
   app.use(getSession());
   app.use(passport.initialize());
