@@ -161,6 +161,26 @@ class JobQueue {
   }
 
   /**
+   * Get job queue statistics
+   */
+  async getStats(): Promise<{
+    queued: number;
+    running: number;
+    failed: number;
+    completed: number;
+    total: number;
+  }> {
+    const jobs = Array.from(this.jobs.values());
+    return {
+      queued: jobs.filter(j => j.status === 'queued').length,
+      running: jobs.filter(j => j.status === 'running').length,
+      failed: jobs.filter(j => j.status === 'failed').length,
+      completed: jobs.filter(j => j.status === 'succeeded').length,
+      total: jobs.length
+    };
+  }
+
+  /**
    * Clear completed jobs older than specified time
    */
   async cleanup(olderThanMs: number = 24 * 60 * 60 * 1000): Promise<number> {

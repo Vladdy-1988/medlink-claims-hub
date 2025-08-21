@@ -112,13 +112,105 @@ The Claims Hub will automatically:
 
 ## Production Deployment
 
-The application is ready for deployment on Replit or any Node.js hosting platform. Ensure all environment variables are configured:
+### Database Setup
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `SESSION_SECRET`: Secure session encryption key
-- `SSO_SHARED_SECRET`: Shared secret for marketplace SSO
+1. **PostgreSQL (Neon)**:
+   ```bash
+   # Set your Neon database URL
+   DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
+   
+   # Run migrations
+   ./db-migrate.sh
+   
+   # Seed initial data (insurers, demo org)
+   ./db-seed.sh
+   ```
+
+### Object Storage Configuration
+
+The application supports both S3-compatible storage (AWS S3, Cloudflare R2) and local filesystem fallback.
+
+**S3/R2 Configuration**:
+```bash
+# S3-compatible storage (AWS S3, Cloudflare R2)
+S3_ENDPOINT=https://your-endpoint.r2.cloudflarestorage.com
+S3_BUCKET=medlink-uploads
+S3_ACCESS_KEY_ID=your-access-key
+S3_SECRET_ACCESS_KEY=your-secret-key
+S3_REGION=auto  # or us-east-1 for AWS
+
+# Local storage fallback (used if S3 not configured)
+STORAGE_DIR=./uploads
+```
+
+### Environment Variables
+
+**Required**:
+- `DATABASE_URL`: PostgreSQL connection string (Neon)
+- `SESSION_SECRET`: Secure session encryption key (generate with `openssl rand -base64 32`)
+
+**Optional**:
+- `SSO_SHARED_SECRET`: Shared secret for marketplace SSO integration
 - `ALLOWED_ORIGINS`: Comma-separated allowed CORS origins
-- `VAPID_PUBLIC_KEY` & `VAPID_PRIVATE_KEY`: Push notification keys
+- `VAPID_PUBLIC_KEY` & `VAPID_PRIVATE_KEY`: Push notification keys (auto-generated on first run)
+- `S3_*`: Object storage configuration (see above)
+
+### Build & Start
+
+1. **Build the application**:
+   ```bash
+   npm run build
+   # Builds both frontend (Vite) and backend (ESBuild)
+   ```
+
+2. **Start in production**:
+   ```bash
+   npm start
+   # Or directly: NODE_ENV=production node dist/index.js
+   ```
+
+### Docker Deployment
+
+A multi-stage Dockerfile is provided for containerized deployment:
+
+```bash
+# Build the Docker image
+docker build -t medlink-claims-hub .
+
+# Run with environment variables
+docker run -d \
+  -p 5000:5000 \
+  -e DATABASE_URL=$DATABASE_URL \
+  -e SESSION_SECRET=$SESSION_SECRET \
+  -e S3_ENDPOINT=$S3_ENDPOINT \
+  -e S3_BUCKET=$S3_BUCKET \
+  -e S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID \
+  -e S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY \
+  medlink-claims-hub
+```
+
+### Health Checks & Monitoring
+
+- **Health Check**: `GET /healthz` - Basic health status
+- **Readiness Check**: `GET /readyz` - Database connectivity check
+- **Metrics**: `GET /metrics` - Prometheus-format metrics including:
+  - Job queue stats (queued, running, failed, completed)
+  - Claim counts by status
+  - Process uptime
+
+### Static Asset Caching
+
+The application implements intelligent caching for static assets:
+- Fingerprinted assets (with hash in filename): `Cache-Control: public, max-age=31536000, immutable`
+- Non-fingerprinted assets: `Cache-Control: public, max-age=3600`
+- HTML files: `Cache-Control: no-cache, no-store, must-revalidate`
+
+### Security Features
+
+- **CSRF Protection**: Double-submit cookie pattern
+- **Rate Limiting**: Tiered limits for auth, uploads, and API endpoints
+- **Security Headers**: CSP, HSTS, X-Frame-Options via Helmet
+- **PHI-Safe Logging**: Automatic redaction of sensitive data
 
 ## API Endpoints
 

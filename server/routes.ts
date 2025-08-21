@@ -27,7 +27,7 @@ import { authLimiter, uploadLimiter, connectorLimiter, apiLimiter } from "./secu
 import { configureSecurityHeaders, additionalSecurityHeaders } from "./security/headers";
 import { getCORSMiddleware } from "./security/cors";
 import { logger, requestLogger } from "./security/logger";
-import { healthCheck, readinessCheck } from "./security/healthChecks";
+import { healthCheck, readinessCheck, metricsEndpoint } from "./security/healthChecks";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply security headers first
@@ -42,6 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Health check routes (no auth/CSRF required)
   app.get('/healthz', healthCheck);
   app.get('/readyz', readinessCheck);
+  app.get('/metrics', metricsEndpoint);
   
   // Configure CORS for SSO (only for SSO endpoint)
   app.use('/auth/sso', cors(configureCORS()));
@@ -150,7 +151,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (process.env.NODE_ENV === 'development') {
         const devUser = await storage.getUser('dev-user-001');
         const stats = await storage.getDashboardStats(devUser?.orgId || 'org-1');
-        return res.json(stats);
+        
+        // Add job queue KPIs
+        const { jobQueue } = await import('./lib/jobs');
+        const jobStats = await jobQueue.getStats();
+        
+        return res.json({
+          ...stats,
+          jobQueue: {
+            queued: jobStats.queued,
+            running: jobStats.running,
+            failed: jobStats.failed,
+            completed: jobStats.completed
+          }
+        });
       }
 
       // Production flow
@@ -164,6 +178,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const stats = await storage.getDashboardStats(user.orgId);
+      
+      // Add job queue KPIs for admin users
+      if (user.role === 'admin') {
+        const { jobQueue } = await import('./lib/jobs');
+        const jobStats = await jobQueue.getStats();
+        
+        return res.json({
+          ...stats,
+          jobQueue: {
+            queued: jobStats.queued,
+            running: jobStats.running,
+            failed: jobStats.failed,
+            completed: jobStats.completed
+          }
+        });
+      }
+      
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
