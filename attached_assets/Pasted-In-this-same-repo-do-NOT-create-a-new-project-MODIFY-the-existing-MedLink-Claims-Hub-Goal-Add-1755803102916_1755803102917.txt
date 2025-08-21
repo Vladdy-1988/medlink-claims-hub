@@ -1,0 +1,95 @@
+In this same repo, do NOT create a new project; MODIFY the existing MedLink Claims Hub.
+
+Goal: Add an **Admin → Coverage Dashboard** that reads `docs/coverage_matrix.json` and lets admins explore Canada-wide coverage with filters (province, rail, status, program, discipline), quick counts, and export. Keep it read-only (no risky writes). Maintain auth/PWA.
+
+Scope (low risk only):
+- Backend: admin-only endpoint that serves the matrix JSON (and CSV fallback).
+- Frontend: new /admin/coverage page with filters, table, chips/badges, summary cards, and CSV export.
+- Tests: 1 API test + 1 basic Playwright e2e for filtering.
+
+---------------------------
+BACKEND (Express, apps/api)
+---------------------------
+1) Add route (admin-only RBAC):
+   - GET /admin/coverage
+     - Reads `docs/coverage_matrix.json` (UTF-8) from repo; if missing, tries `docs/coverage_matrix.csv` and converts to JSON.
+     - Returns: { updatedAt, rows: Array<{ province, program, insurer?, disciplines, rail, status, notes? }> }
+     - Cache with ETag/Last-Modified (optional).
+   - Guard with existing admin RBAC middleware. Do NOT expose filesystem paths or secrets.
+
+2) CSV fallback:
+   - If CSV exists, parse with a tiny parser; coerce fields: disciplines -> array (split by `;` or `,`), normalize province codes (AB, BC, …), rail in { 'cdanet','eclaims','portal' }, status in { 'supported','sandbox','todo' }.
+
+3) Add a small utility:
+   - /apps/api/src/lib/coverage.ts -> normalizeRow(row): trims strings, uppercases province code, validates enums, drops unknown keys.
+
+---------------------------
+FRONTEND (Vite/React, apps/web)
+---------------------------
+4) Navigation:
+   - Add “Coverage” under **Admin** in the sidebar (visible only to role=admin).
+
+5) Page: /admin/coverage
+   Components to build (Tailwind + Radix + existing design system):
+   - Header: title “Coverage Dashboard” + subtitle “Canada-wide EDI/portal coverage”.
+   - Summary cards (KPI style):
+     • Total rows
+     • Supported count
+     • Sandbox count
+     • TODO count
+     • Breakdown by rail (cdanet/eclaims/portal)
+   - Filters row:
+     • Province select (ALL + AB, BC, MB, NB, NL, NS, NT, NU, ON, PE, QC, SK, YT)
+     • Rail select (ALL, CDAnet, TELUS eClaims, Portal)
+     • Status select (ALL, Supported, Sandbox, To-Do)
+     • Program/Insurer search (text)
+     • Discipline multi-select (chips)
+   - Data table:
+     • Columns: Province, Program/Insurer, Disciplines (chips), Rail (badge), Status (badge), Notes (truncate with tooltip)
+     • Sort by Province/Program/Status
+     • Client-side pagination (50/page)
+   - Export:
+     • Button “Export CSV” that re-serializes the currently filtered view and downloads `coverage_export.csv`.
+
+   Badges:
+     - Rail: cdanet=teal, eclaims=sky, portal=slate
+     - Status: supported=emerald, sandbox=amber, todo=rose
+
+6) Empty/Loading states:
+   - Skeleton on first load; nice empty state if no rows match filters.
+
+7) Accessibility:
+   - All controls labeled; keyboard nav; focus-visible rings.
+
+---------------------------
+TESTS
+---------------------------
+8) API test (Supertest):
+   - GET /admin/coverage as admin -> 200 with rows[]
+   - GET /admin/coverage as provider -> 403/401
+
+9) Playwright e2e (basic):
+   - Login as admin -> visit /admin/coverage
+   - Select Province=ON, Rail=Portal, Status=To-Do -> expect table to update (count > 0 or explicit “No results”)
+   - Click Export CSV -> verify a download started (or presence of blob URL)
+
+---------------------------
+NON-GOALS (to keep risk low)
+---------------------------
+- No editing/writing coverage files from UI.
+- No dynamic province law summaries here (that lives in docs).
+- No new dependencies beyond a tiny CSV parser if really needed.
+
+---------------------------
+ACCEPTANCE CRITERIA
+---------------------------
+- New admin-only route /admin/coverage (API) returns normalized JSON; CSV fallback works if JSON missing.
+- New Admin sidebar item “Coverage” -> page at /admin/coverage renders.
+- Filters work together and update KPI counts + table.
+- Export CSV downloads only the filtered rows.
+- Basic API and e2e tests pass.
+- No changes to existing auth/PWA flows; Lighthouse unaffected significantly.
+
+Implementation notes:
+- If `docs/coverage_matrix.json` not found, create a small placeholder with a few sample rows (AB/ON/QC across cdanet/eclaims/portal).
+- Keep components minimal and reuse existing Table/Badge/Card primitives if present; otherwise create tiny versions locally.

@@ -19,6 +19,7 @@ import NewPreAuth from "@/pages/NewPreAuth";
 import Remittances from "@/pages/Remittances";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
+import Coverage from "@/pages/Coverage";
 
 function Router() {
   // DEVELOPMENT MODE - NO AUTHENTICATION NEEDED
@@ -37,6 +38,7 @@ function Router() {
           <Route path="/remittances" component={Remittances} />
           <Route path="/settings" component={Settings} />
           <Route path="/admin" component={Admin} />
+          <Route path="/admin/coverage" component={Coverage} />
         </AppShell>
         <Route component={NotFound} />
         <InstallPrompt />
@@ -82,6 +84,7 @@ function Router() {
         <Route path="/remittances" component={Remittances} />
         <Route path="/settings" component={Settings} />
         <Route path="/admin" component={Admin} />
+        <Route path="/admin/coverage" component={Coverage} />
       </AppShell>
       <Route component={NotFound} />
       <InstallPrompt />

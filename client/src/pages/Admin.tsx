@@ -175,6 +175,7 @@ export default function Admin() {
           <TabsList>
             <TabsTrigger value="users" data-testid="tab-users">Users & Roles</TabsTrigger>
             <TabsTrigger value="audit" data-testid="tab-audit">Audit Log</TabsTrigger>
+            <TabsTrigger value="coverage" data-testid="tab-coverage">Coverage</TabsTrigger>
             <TabsTrigger value="system" data-testid="tab-system">System Settings</TabsTrigger>
           </TabsList>
 
@@ -359,6 +360,37 @@ export default function Admin() {
                     )}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Coverage Tab */}
+          <TabsContent value="coverage">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg leading-6 font-medium text-slate-900">Canada-wide Coverage Matrix</h3>
+                    <p className="mt-1 text-sm text-slate-500">View EDI and portal integration coverage across all provinces</p>
+                  </div>
+                  <Button
+                    onClick={() => window.location.href = '/admin/coverage'}
+                    data-testid="button-view-coverage"
+                  >
+                    <i className="fas fa-map-marked-alt mr-2"></i>
+                    Open Coverage Dashboard
+                  </Button>
+                </div>
+                
+                <div className="bg-slate-50 rounded-lg p-6 text-center">
+                  <i className="fas fa-globe-americas text-4xl text-slate-400 mb-4"></i>
+                  <p className="text-sm text-slate-600 mb-4">
+                    View comprehensive coverage data for CDAnet, TELUS eClaims, and provincial portal integrations.
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Track integration status, supported disciplines, and implementation progress across all Canadian provinces and territories.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

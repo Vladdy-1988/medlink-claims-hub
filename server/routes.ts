@@ -961,6 +961,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin Coverage Dashboard route
+  app.get('/api/admin/coverage', devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      // Check if user is admin
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      // Load coverage data
+      const { loadCoverageData } = await import('./lib/coverage');
+      const coverageData = loadCoverageData();
+
+      // Add cache headers
+      res.set({
+        'Cache-Control': 'public, max-age=300', // Cache for 5 minutes
+        'ETag': `"${Buffer.from(JSON.stringify(coverageData)).toString('base64').slice(0, 20)}"`,
+        'Last-Modified': new Date(coverageData.updatedAt).toUTCString()
+      });
+
+      res.json(coverageData);
+    } catch (error) {
+      console.error("Error fetching coverage data:", error);
+      res.status(500).json({ message: "Failed to fetch coverage data" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
