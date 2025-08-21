@@ -35,16 +35,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Try to setup auth, but continue if it fails
-  try {
-    await setupAuth(app);
-  } catch (error) {
-    console.error('Auth setup failed, continuing without auth:', error);
+  // SKIP AUTH COMPLETELY IN DEVELOPMENT MODE
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🚀 Development mode: Authentication bypassed');
     // Create a mock auth middleware that always allows access
     app.use((req: any, res, next) => {
-      req.user = { claims: { sub: 'demo-user' } };
+      req.user = { 
+        claims: { 
+          sub: 'dev-user-001',
+          email: 'dev@medlinkclaims.com',
+          first_name: 'Development',
+          last_name: 'User'
+        }
+      };
+      req.isAuthenticated = () => true;
       next();
     });
+  } else {
+    // Production mode - setup real auth
+    try {
+      await setupAuth(app);
+    } catch (error) {
+      console.error('Auth setup failed:', error);
+      // Fallback for auth failure
+      app.use((req: any, res, next) => {
+        req.user = { claims: { sub: 'demo-user' } };
+        next();
+      });
+    }
   }
 
   // Auth routes
