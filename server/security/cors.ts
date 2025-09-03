@@ -34,8 +34,8 @@ export function configureCORS(): cors.CorsOptions {
   
   const corsOptions: CorsOptions = {
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Allow requests with no origin (mobile apps, Postman, etc.) in development
-      if (!origin && process.env.NODE_ENV === 'development') {
+      // Allow requests with no origin (health checks, internal calls)
+      if (!origin) {
         return callback(null, true);
       }
       
@@ -45,7 +45,7 @@ export function configureCORS(): cors.CorsOptions {
       }
       
       // Check if origin is in allowed list
-      if (!origin || allowedOrigins.length === 0) {
+      if (allowedOrigins.length === 0) {
         return callback(new Error('CORS: Origin not allowed'));
       }
       

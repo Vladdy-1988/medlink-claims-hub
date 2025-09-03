@@ -3,33 +3,27 @@ import { db } from './db';
 import { pushSubscriptions, users, claims } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 
-// VAPID key generation and storage
-const generateVAPIDKeys = () => {
-  return webpush.generateVAPIDKeys();
-};
+// Check if VAPID keys are configured
+const hasVapid = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
 
-// Initialize VAPID keys
-let vapidKeys: { publicKey: string; privateKey: string };
+// Initialize VAPID keys only if available
+let vapidKeys: { publicKey: string; privateKey: string } | null = null;
 
-if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+if (hasVapid) {
   vapidKeys = {
-    publicKey: process.env.VAPID_PUBLIC_KEY,
-    privateKey: process.env.VAPID_PRIVATE_KEY,
+    publicKey: process.env.VAPID_PUBLIC_KEY!,
+    privateKey: process.env.VAPID_PRIVATE_KEY!,
   };
+  
+  // Configure web-push only when keys are available
+  webpush.setVapidDetails(
+    'mailto:noreply@medlink.claims',
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+  );
 } else {
-  // Generate new keys if not found in environment
-  vapidKeys = generateVAPIDKeys();
-  console.log('Generated VAPID keys. Add these to your environment:');
-  console.log(`VAPID_PUBLIC_KEY=${vapidKeys.publicKey}`);
-  console.log(`VAPID_PRIVATE_KEY=${vapidKeys.privateKey}`);
+  console.warn('Push disabled: missing VAPID keys');
 }
-
-// Configure web-push
-webpush.setVapidDetails(
-  'mailto:noreply@medlink.claims',
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
 
 export interface NotificationPayload {
   title: string;
@@ -55,6 +49,9 @@ export class PushNotificationService {
    * Get VAPID public key for client registration
    */
   static getVAPIDPublicKey(): string {
+    if (!hasVapid || !vapidKeys) {
+      return '';
+    }
     return vapidKeys.publicKey;
   }
 
@@ -73,6 +70,10 @@ export class PushNotificationService {
     },
     userAgent?: string
   ): Promise<void> {
+    if (!hasVapid) {
+      throw new Error('Push notifications disabled: missing VAPID keys');
+    }
+    
     try {
       // Remove any existing subscriptions for this user/org to prevent duplicates
       await db
@@ -107,6 +108,10 @@ export class PushNotificationService {
     userId: string,
     payload: NotificationPayload
   ): Promise<{ sent: number; failed: number }> {
+    if (!hasVapid) {
+      return { sent: 0, failed: 0 };
+    }
+    
     try {
       const subscriptions = await db
         .select()
@@ -166,6 +171,10 @@ export class PushNotificationService {
    * Send a test notification to a user
    */
   static async sendTestNotification(userId: string): Promise<{ sent: number; failed: number }> {
+    if (!hasVapid) {
+      throw new Error('Push notifications disabled: missing VAPID keys');
+    }
+    
     const payload: NotificationPayload = {
       title: 'MedLink Claims Hub',
       body: 'Test notification - your push notifications are working!',
@@ -188,6 +197,9 @@ export class PushNotificationService {
     newStatus: string,
     userId: string
   ): Promise<{ sent: number; failed: number }> {
+    if (!hasVapid) {
+      return { sent: 0, failed: 0 };
+    }
     const statusMessages = {
       paid: {
         title: '✅ Claim Approved',

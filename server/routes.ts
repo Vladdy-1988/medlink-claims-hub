@@ -30,7 +30,20 @@ import { logger, requestLogger } from "./security/logger";
 import { healthCheck, readinessCheck, metricsEndpoint } from "./security/healthChecks";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Apply security headers first
+  // Health check routes BEFORE CORS (no auth/CSRF required)
+  app.get('/healthz', (_req, res) => res.status(200).send('ok'));
+  app.get('/readyz', async (_req, res) => {
+    try {
+      // Do a trivial DB ping via drizzle
+      const { db } = await import('./db');
+      await db.execute('SELECT 1');
+      res.status(200).send('ready');
+    } catch (e) {
+      res.status(503).send('db_unreachable');
+    }
+  });
+  
+  // Apply security headers
   app.use(configureSecurityHeaders());
   
   // Apply CORS middleware
@@ -39,9 +52,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Request logging (PHI-safe)
   app.use(requestLogger);
   
-  // Health check routes (no auth/CSRF required)
-  app.get('/healthz', healthCheck);
-  app.get('/readyz', readinessCheck);
+  // Metrics endpoint (after CORS)
   app.get('/metrics', metricsEndpoint);
   
   // Configure CORS for SSO (only for SSO endpoint)
@@ -203,10 +214,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Push Notifications API
   app.get('/api/push/vapid-key', (req, res) => {
-    res.json({ publicKey: PushNotificationService.getVAPIDPublicKey() });
+    const publicKey = PushNotificationService.getVAPIDPublicKey();
+    if (!publicKey) {
+      return res.status(501).json({ ok: false, reason: 'push_disabled' });
+    }
+    res.json({ publicKey });
   });
 
   app.post('/api/push/subscribe', devAuth(isAuthenticated), async (req: any, res) => {
+    // Check if push is enabled
+    if (!PushNotificationService.getVAPIDPublicKey()) {
+      return res.status(501).json({ ok: false, reason: 'push_disabled' });
+    }
+    
     try {
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.orgId) {
@@ -245,6 +265,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/push/test', devAuth(isAuthenticated), async (req: any, res) => {
+    // Check if push is enabled
+    if (!PushNotificationService.getVAPIDPublicKey()) {
+      return res.status(501).json({ ok: false, reason: 'push_disabled' });
+    }
+    
     try {
       const result = await PushNotificationService.sendTestNotification(req.user.claims.sub);
       

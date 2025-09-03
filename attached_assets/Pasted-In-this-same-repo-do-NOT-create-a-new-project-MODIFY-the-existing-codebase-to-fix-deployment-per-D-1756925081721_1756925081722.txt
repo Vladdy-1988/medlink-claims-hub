@@ -1,0 +1,50 @@
+In this same repo, do NOT create a new project; MODIFY the existing codebase to fix deployment per DEPLOYMENT DIAGNOSTIC REPORT.
+
+Goals (low-risk patches only):
+- Correct the deploy run command (no workspaces).
+- Make web push optional (do not crash if VAPID keys missing).
+- Ensure /healthz and /readyz work in production (not blocked by CORS).
+- Keep all current behavior otherwise.
+
+A) .replit (or deploy run command)
+- Update the deploy/run command to:
+  run = ["sh","-c","npm run db:push && NODE_ENV=production npm start"]
+- Keep the build command as:
+  build = ["sh","-c","npm ci && npm run build"]
+
+B) Push service — optionalize web push
+Edit server/pushService.ts (or equivalent):
+- Introduce:
+  const hasVapid = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+- If !hasVapid:
+  - Do NOT call webpush.setVapidDetails.
+  - Export stubs for subscribe/test that return 501 JSON: { ok:false, reason:"push_disabled" }.
+  - Log one warning at boot: "Push disabled: missing VAPID keys".
+- If hasVapid, keep current behavior.
+
+C) CORS & Health
+1) server/security/cors.ts:
+   - Parse ALLOWED_ORIGINS as a comma-separated list of exact origins.
+   - Allow requests with no Origin header (for health checks and internal calls): if (!origin) return callback(null, true).
+   - Set optionsSuccessStatus: 204, maxAge: 600, credentials: true.
+2) server/index.ts:
+   - Mount health routes BEFORE the CORS middleware:
+       app.get('/healthz', (_req,res)=>res.status(200).send('ok'));
+       app.get('/readyz', async (_req,res)=> {
+         try { /* do a trivial DB ping via drizzle */ res.status(200).send('ready'); }
+         catch(e){ res.status(503).send('db_unreachable'); }
+       });
+   - Then apply CORS and the rest of the routes.
+
+D) Scripts sanity (package.json root):
+- Ensure these exist (add if missing, but do not remove others):
+  "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+  "start": "NODE_ENV=production node dist/index.js",
+  "db:push": "drizzle-kit push",
+  "check": "tsc"
+
+Acceptance:
+- `NODE_ENV=production PORT=5000 npm start` launches locally.
+- `curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:5000/healthz` returns 200.
+- App runs without VAPID keys; push endpoints reply 501 when keys absent.
+- No functional changes outside of these deploy fixes.
