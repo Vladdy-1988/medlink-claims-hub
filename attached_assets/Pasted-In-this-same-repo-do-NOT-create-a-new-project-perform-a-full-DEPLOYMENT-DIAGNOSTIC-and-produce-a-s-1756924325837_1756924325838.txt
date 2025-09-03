@@ -1,0 +1,80 @@
+In this same repo, do NOT create a new project; perform a full DEPLOYMENT DIAGNOSTIC and produce a single markdown report. 
+Only make trivial, temporary diagnostics files if needed (e.g., scripts/diag.sh). Do NOT change app behavior or commit risky edits.
+
+GOAL
+Figure out why production deploy fails by gathering concrete evidence from:
+- repo layout & scripts
+- environment variables (dev shell) vs expected deploy env
+- database connectivity (Neon)
+- build artifacts & entrypoints
+- server port/bind config
+- CORS/cookies/security flags
+- push (VAPID) optionality
+- health endpoints
+
+DELIVERABLE
+Print a file named `DEPLOY_DIAGNOSTIC_REPORT.md` to the console (and save it at repo root) with sections below.
+
+WHAT TO COLLECT (and include in the report)
+
+A) REPO OVERVIEW
+- Monorepo layout tree (max depth 3): apps/, packages/, prisma/, config/, docs/, etc.
+- Node/NPM versions: `node -v`, `npm -v`
+- package.json workspaces and all scripts at root + apps/api + apps/web (read package.json; don’t just list)
+- .replit and/or deploy commands if present (build/run)
+
+B) ENV CHECK (CURRENT SHELL)
+- List presence (true/false + value length only, NOT the secret itself) for these keys: 
+  DATABASE_URL, NODE_ENV, PORT, BASE_URL, ALLOWED_ORIGINS, JWT_SECRET, SSO_SHARED_SECRET, 
+  CONNECTORS_MODE, ITRANS_ENABLED, ECLAIMS_ENABLED, STORAGE_DIR, 
+  VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
+- If DATABASE_URL is set, mask all but host and db name; confirm it contains `sslmode=require`.
+
+C) PRISMA / DB CONNECTIVITY
+- Prisma version (`npx prisma -v`)
+- Schema path and provider (sqlite/postgresql)
+- Run a SAFE status check: `npx prisma migrate status --schema=./prisma/schema.prisma` using the current DATABASE_URL.
+  - If DATABASE_URL missing, state “MISSING” and skip network calls.
+- If status fails, capture the exact error.
+
+D) BUILD ARTIFACTS
+- Run typecheck: `npx tsc --noEmit` and summarize errors/warnings (count + first 10 lines).
+- Run web build (apps/web) and api build (apps/api); show output sizes and output dirs.
+- Confirm API entrypoint that production uses (e.g., apps/api/dist/server.js) exists.
+
+E) SERVER PORT & BIND
+- Scan API source for `listen(` and show the line that binds the server; confirm it uses `process.env.PORT || 5000` and host `0.0.0.0`.
+- Note expected PORT=5000 for Replit deploy and whether code matches.
+
+F) HEALTH CHECKS (LOCAL)
+- If builds succeeded, try to start the API ONCE with:
+  NODE_ENV=production PORT=5000 (and any minimal env needed) 
+  Start it, wait up to 10s, then:
+    - curl http://127.0.0.1:5000/healthz (expect 200/ok if implemented)
+    - curl http://127.0.0.1:5000/readyz (expect 200 if DB reachable)
+  Then stop the process cleanly. If health endpoints don’t exist, say so; don’t fail the report.
+
+G) CORS / COOKIES / PUSH
+- Locate where CORS is configured; print allowed origins and whether wildcards are used.
+- Verify auth cookie flags in production: httpOnly=true, SameSite=Lax, Secure=true.
+- Check push init: if VAPID keys are required at boot, note it; otherwise confirm it tolerates missing keys.
+
+H) DEPLOY VS DEV ENV GAPS
+- Based on findings, output a “Deployment Env Checklist” table with REQUIRED and OPTIONAL keys, and the recommended values/format (e.g., `?sslmode=require`).
+- Include the exact deployed origin to be whitelisted (infer from .replit / known replit.app domain if available; otherwise leave a placeholder).
+
+I) PROBABLE ROOT CAUSES (ranked)
+- Provide a ranked list (P0/P1) of likely deploy blockers with direct evidence references (e.g., “DATABASE_URL missing in deploy env”, “server binds to localhost, not 0.0.0.0”, “CORS missing deployed origin”, “push crashes when VAPID unset”, etc.).
+
+J) ONE-LINER FIXES
+- For each P0/P1, give a precise one-liner fix (env var to set, code line to change, or deploy command to update). 
+- Include suggested Replit Deploy build/run commands (e.g., `npm ci && npm run build` and `npm -w apps/api run prisma:migrate && npm start`).
+
+IMPLEMENTATION NOTES
+- You may create a temp script like `scripts/diag.sh` to run commands and tee outputs, but do not alter application logic.
+- When printing secrets in the report, NEVER print raw values; show only “[set] (len: xx)” or “[missing]”.
+- If any step hangs, timeout after ~15s and continue the report with a note.
+
+ACCEPTANCE
+- A single file `DEPLOY_DIAGNOSTIC_REPORT.md` is created and printed.
+- It contains concrete outputs (not guesses) for A–J above and clearly highlights deploy blockers with exact fixes.
