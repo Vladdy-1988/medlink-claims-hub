@@ -1,20 +1,32 @@
 import helmet from 'helmet';
 import { Request, Response, NextFunction } from 'express';
 
-// Configure Helmet with appropriate CSP for the application
+// Configure Helmet with deployment-compatible settings
 export function configureSecurityHeaders() {
+  // Use minimal security headers for deployment compatibility
+  if (process.env.NODE_ENV === 'production') {
+    // Return a simple middleware that adds basic security headers without helmet complexity
+    return (req: any, res: any, next: any) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.removeHeader('X-Powered-By');
+      next();
+    };
+  }
+  
+  // Full security headers for development
   return helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
-          "'unsafe-inline'", // Required for React development
-          "'unsafe-eval'", // Required for development (remove in production)
+          "'unsafe-inline'",
+          "'unsafe-eval'",
         ],
         styleSrc: [
           "'self'",
-          "'unsafe-inline'", // Required for inline styles
+          "'unsafe-inline'",
           "https://fonts.googleapis.com",
         ],
         fontSrc: [
@@ -24,40 +36,25 @@ export function configureSecurityHeaders() {
         ],
         imgSrc: [
           "'self'",
-          "data:", // For inline images
-          "blob:", // For blob URLs
-          "https:", // For external images (CDN, avatars, etc.)
+          "data:",
+          "blob:",
+          "https:",
         ],
         connectSrc: [
           "'self'",
-          "wss:", // WebSocket connections
-          "https:", // API calls
+          "wss:",
+          "https:",
         ],
-        mediaSrc: ["'self'"],
+        mediaSrc: ["'self"],
         objectSrc: ["'none'"],
         frameSrc: ["'none'"],
-        frameAncestors: ["'none'"], // Equivalent to X-Frame-Options: DENY
+        frameAncestors: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
-        // upgradeInsecureRequests directive removed due to compatibility issues
       },
     },
-    crossOriginEmbedderPolicy: false, // May need to be false for external resources
-    crossOriginOpenerPolicy: { policy: "same-origin" },
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    dnsPrefetchControl: { allow: false },
-    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
     hidePoweredBy: true,
-    hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: true,
-    },
-    ieNoOpen: true,
-    noSniff: true, // X-Content-Type-Options: nosniff
-    originAgentCluster: true,
-    permittedCrossDomainPolicies: false,
-    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    noSniff: true,
     xssFilter: true,
   });
 }
