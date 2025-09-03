@@ -9,7 +9,7 @@ packages = ["jq"]
 [deployment]
 deploymentTarget = "autoscale"
 build = ["sh", "-c", "npm ci && npm run build"]
-run = ["sh", "-c", "npm -w apps/api run prisma:migrate && npm start"]
+run = ["sh", "-c", "npm run db:push && NODE_ENV=production npm start"]
 
 [[ports]]
 localPort = 5000
