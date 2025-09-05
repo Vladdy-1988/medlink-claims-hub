@@ -51,7 +51,12 @@ app.use((req, res, next) => {
   
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    // Don't interfere with static asset serving
+    if (req.path.startsWith('/assets/') || req.path.startsWith('/icons/') || req.path.endsWith('.css') || req.path.endsWith('.js')) {
+      return next(err);
+    }
+
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
