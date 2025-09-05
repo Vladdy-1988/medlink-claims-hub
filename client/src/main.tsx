@@ -2,6 +2,17 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index-clean.css";
 
+// Add global error handler to catch any unhandled errors
+window.addEventListener('error', (event) => {
+  console.error('Global error:', event.error);
+  console.error('Error message:', event.message);
+  console.error('Source:', event.filename, 'Line:', event.lineno);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', event.reason);
+});
+
 // Register service worker for PWA functionality
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -15,9 +26,21 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-const rootElement = document.getElementById("root");
-if (rootElement) {
-  createRoot(rootElement).render(<App />);
-} else {
-  console.error("Root element not found!");
+console.log('🚀 MedLink main.tsx starting...');
+
+try {
+  const rootElement = document.getElementById("root");
+  if (rootElement) {
+    console.log('✅ Root element found, creating React root...');
+    const root = createRoot(rootElement);
+    root.render(<App />);
+    console.log('✅ React app rendered successfully');
+  } else {
+    console.error("❌ Root element not found!");
+    // Create a fallback message
+    document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h1>Loading Error</h1><p>Root element not found. Please refresh the page.</p></div>';
+  }
+} catch (error) {
+  console.error('❌ Critical error in main.tsx:', error);
+  document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h1>Application Error</h1><p>Failed to load application. Please check console for details.</p></div>';
 }
