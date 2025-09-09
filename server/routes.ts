@@ -160,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Development mode bypass
       if (process.env.NODE_ENV === 'development') {
         const devUser = await storage.getUser('dev-user-001');
-        const stats = await storage.getDashboardStats(devUser?.orgId || 'org-1');
+        const stats = await storage.getDashboardStats(devUser?.orgId || '11111111-1111-1111-1111-111111111111');
         
         // Add job queue KPIs
         const { jobQueue } = await import('./lib/jobs');

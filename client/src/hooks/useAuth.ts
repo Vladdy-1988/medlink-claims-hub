@@ -26,7 +26,7 @@ export function useAuth() {
             firstName: 'Development',
             lastName: 'User',
             role: 'admin',
-            orgId: 'org-1'
+            orgId: '11111111-1111-1111-1111-111111111111'
           };
         }
         return null; // Return null instead of throwing
