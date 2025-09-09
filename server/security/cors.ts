@@ -5,13 +5,15 @@ import { Request } from 'express';
 function getAllowedOrigins(): string[] {
   const allowedOrigins = process.env.ALLOWED_ORIGINS || '';
   
-  // In development, allow localhost origins
+  // In development, allow localhost origins and Replit preview domains
   if (process.env.NODE_ENV === 'development') {
     return [
       'http://localhost:5000',
       'http://localhost:3000',
       'http://127.0.0.1:5000',
       'http://127.0.0.1:3000',
+      'https://240ab47d-e86c-462a-b682-2cdb8c3824f7-00-3ctlzqxartp8m.picard.replit.dev',
+      'https://*.replit.dev', // Allow all replit preview domains
     ];
   }
   
@@ -37,6 +39,13 @@ export function configureCORS(): cors.CorsOptions {
       // Allow requests with no origin (health checks, internal calls)
       if (!origin) {
         return callback(null, true);
+      }
+      
+      // In development, be more permissive for Replit domains
+      if (process.env.NODE_ENV === 'development') {
+        if (origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('replit.dev')) {
+          return callback(null, true);
+        }
       }
       
       // Reject wildcard origins
