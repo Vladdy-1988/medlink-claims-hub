@@ -97,12 +97,15 @@ function Router() {
 }
 
 function App() {
-  // Temporary simple test to isolate React hook issues
   return (
-    <div style={{ padding: '20px', textAlign: 'center' }}>
-      <h1>MedLink Claims Hub</h1>
-      <p>Loading...</p>
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="system" storageKey="medlink-ui-theme">
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 
