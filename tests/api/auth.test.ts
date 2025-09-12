@@ -21,7 +21,9 @@ describe('Auth Guard Tests', () => {
     
     // Import and register routes
     const { registerRoutes } = await import('../../server/routes');
-    server = await registerRoutes(app);
+    const httpServer = createServer(app);
+    await registerRoutes(app);
+    server = httpServer;
   });
 
   afterAll(async () => {
