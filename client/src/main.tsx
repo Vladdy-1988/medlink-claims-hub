@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import "./index-clean.css";
+import App from "./App";
 
 // Add global error handler to catch any unhandled errors
 window.addEventListener('error', (event) => {
@@ -27,30 +28,12 @@ if ('serviceWorker' in navigator) {
 
 console.log('🚀 MedLink main.tsx starting...');
 
-function SimpleApp() {
-  return (
-    <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
-      <h1 style={{ color: '#2563eb' }}>🏥 MedLink Claims Hub</h1>
-      <p>Medical claims management system is loading successfully!</p>
-      <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '8px', marginTop: '20px' }}>
-        <h2>System Status</h2>
-        <ul>
-          <li>✅ Frontend: React app running</li>
-          <li>✅ Backend: Express server connected</li>
-          <li>✅ Database: PostgreSQL ready</li>
-          <li>✅ Authentication: Development mode</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 try {
   const rootElement = document.getElementById("root");
   if (rootElement) {
     console.log('✅ Root element found, creating React root...');
     const root = createRoot(rootElement);
-    root.render(<SimpleApp />);
+    root.render(<App />);
     console.log('✅ React app rendered successfully');
   } else {
     console.error("❌ Root element not found!");
