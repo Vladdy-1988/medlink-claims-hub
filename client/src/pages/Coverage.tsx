@@ -70,8 +70,11 @@ export default function Coverage() {
   const { data: coverageData, isLoading, error } = useQuery<CoverageData>({
     queryKey: ['/api/admin/coverage'],
     queryFn: async () => {
-      const response = await apiRequest('/api/admin/coverage');
-      return response;
+      const response = await fetch('/api/admin/coverage');
+      if (!response.ok) {
+        throw new Error('Failed to fetch coverage data');
+      }
+      return response.json() as Promise<CoverageData>;
     },
   });
 

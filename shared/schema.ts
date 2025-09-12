@@ -141,6 +141,24 @@ export const claims = pgTable("claims", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Pre-authorization table
+export const preAuths = pgTable("preauths", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: uuid("org_id").references(() => organizations.id).notNull(),
+  authNumber: varchar("auth_number").unique().notNull(),
+  patientId: uuid("patient_id").references(() => patients.id).notNull(),
+  providerId: uuid("provider_id").references(() => providers.id).notNull(),
+  insurerId: uuid("insurer_id").references(() => insurers.id).notNull(),
+  status: claimStatusEnum("status").notNull().default("draft"),
+  requestedAmount: decimal("requested_amount", { precision: 10, scale: 2 }).notNull(),
+  approvedAmount: decimal("approved_amount", { precision: 10, scale: 2 }),
+  expiryDate: timestamp("expiry_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+});
+
 export const attachments = pgTable("attachments", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   claimId: uuid("claim_id").references(() => claims.id).notNull(),
@@ -241,6 +259,12 @@ export const insertClaimSchema = createInsertSchema(claims).omit({
   updatedAt: true,
 });
 
+export const insertPreAuthSchema = createInsertSchema(preAuths).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertAttachmentSchema = createInsertSchema(attachments).omit({
   id: true,
   createdAt: true,
@@ -290,6 +314,7 @@ export type Provider = typeof providers.$inferSelect;
 export type Appointment = typeof appointments.$inferSelect;
 export type Insurer = typeof insurers.$inferSelect;
 export type Claim = typeof claims.$inferSelect;
+export type PreAuth = typeof preAuths.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type Remittance = typeof remittances.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
@@ -299,6 +324,7 @@ export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertPatient = z.infer<typeof insertPatientSchema>;
 export type InsertProvider = z.infer<typeof insertProviderSchema>;
 export type InsertClaim = z.infer<typeof insertClaimSchema>;
+export type InsertPreAuth = z.infer<typeof insertPreAuthSchema>;
 export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
 export type InsertRemittance = z.infer<typeof insertRemittanceSchema>;
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;

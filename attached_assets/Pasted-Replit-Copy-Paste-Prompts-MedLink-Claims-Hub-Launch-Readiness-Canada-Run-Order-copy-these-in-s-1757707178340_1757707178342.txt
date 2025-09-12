@@ -1,0 +1,462 @@
+Replit Copy‑Paste Prompts – MedLink Claims Hub Launch Readiness (Canada)
+
+Run Order: copy these in sequence. Paste each line into Replit. When it is done and all tests are green, move to the next line. If any step fails, fix before continuing.
+
+	1.	Prepare and baseline – Create a new branch named “canada-launch”. Install dependencies. Run the full test suite and show a clean baseline.
+	2.	Organization isolation – Apply the prompt in section 1 to enforce row‑level security by organization. Run tests.
+	3.	Exactly‑once submissions – Apply the prompt in section 2 to add idempotency keys and the outbox worker. Run tests.
+	4.	Browser cache safety – Apply the prompt in section 3 to restrict the service worker to static files only and add logout purge. Run tests.
+	5.	Offline draft protection – Apply the prompt in section 4 to encrypt drafts in the browser and add the device wipe. Run tests.
+	6.	Notification hygiene – Apply the prompt in section 5 to make push messages privacy‑safe. Run tests.
+	7.	Security headers and allowed origins – Apply the prompt in section 6 to set a strict content security policy and cross origin rules. Run tests.
+	8.	Sessions and account protection – Apply the prompt in section 7 to harden cookies, add optional multi‑factor for administrators, and throttle sensitive routes. Run tests.
+	9.	Audit trail depth – Apply the prompt in section 8 to add before/after values and an export per organization. Run tests.
+	10.	Retention timers – Apply the prompt in section 9 to enforce seven‑year retention with logs. Run tests.
+	11.	Canada‑only storage – Apply the prompt in section 10 to force database and object storage to Canadian regions and expose them in health checks. Run tests.
+	12.	Transparency and language – Apply the prompt in section 11 to add the privacy officer page and full English and French coverage with a missing‑key build check. Run tests.
+	13.	Whole‑journey browser tests – Apply the prompt in section 12 to add end‑to‑end tests for the complete claim journey, including offline sync. Run tests.
+	14.	Smart rate limits – Apply the prompt in section 13 to tune limits per route and log blocks. Run tests.
+	15.	Watch the system – Apply the prompt in section 14 to add health, readiness, metrics, dashboards, and alerts. Run tests.
+	16.	Recover on bad days – Apply the prompt in section 15 to script backups and a timed restore drill stored only in Canada. Run tests and record timings.
+	17.	Human‑friendly insurer feedback – Apply the prompt in section 16 to map rejection codes to clear guidance and show it in timelines and reports. Run tests.
+	18.	Certification visibility – Apply the prompt in section 17 to add the insurer and network certification tracker and an admin view. Run tests.
+	19.	Clean payment data – Apply the prompt in section 18 to ensure payment payloads contain only surrogate identifiers. Run tests.
+	20.	Fast and accessible – Apply the prompt in section 19 to enforce accessibility checks and performance budgets. Run tests.
+	21.	Safe launches – Apply the prompt in section 20 to add release notes and a rollback playbook. Link both from the readme. Run tests.
+
+Finish line: merge the branch, tag the release, and follow the launch runbook.
+
+How to use: Paste one prompt at a time into the Replit assistant. Let it propose file changes, review the patch, and run tests. Each prompt includes a clear definition of done.
+
+⸻
+
+1) Enforce database row‑level security for organization isolation
+
+You are working in the MedLink Claims Hub repository (React front end, Express server, Postgres with Drizzle). Implement row‑level security to ensure every table with organization data is isolated by organization.
+
+Tasks:
+1. Create a migration that:
+   - Enables row‑level security on these tables: users, organizations, patients, providers, claims, claim_items, attachments, remittances, audit_logs, sessions.
+   - Adds a text session variable "app.current_org" and policies that only allow select, insert, update, delete when the row's organization identifier matches current_setting('app.current_org').
+   - Adds a safe default that denies access if the setting is missing.
+2. In the server connection pool, set the session variable from the signed‑in user's organization at the start of each request (wrap queries in a transaction and run `SET LOCAL app.current_org = $1`).
+3. Add unit tests proving a user from Organization A cannot read or modify rows from Organization B.
+
+Edit files:
+- /server/db/migrations/*.ts
+- /server/db/index.ts (or wherever the pool is created)
+- /server/middleware/auth/*.ts
+- /server/tests/security/row_level_security.test.ts
+
+Definition of done:
+- Policies exist for all listed tables.
+- Tests show access succeeds for own organization and fails for others.
+- All tests pass with package scripts.
+
+
+⸻
+
+2) Add idempotency keys and the outbox delivery pattern for claim submission
+
+Goal: Claims are submitted exactly once even under retries or restarts.
+
+Tasks:
+1. Add an `idempotency_key` column to the claims table with a unique index. Reject duplicate keys at the service layer with a helpful message.
+2. Create an `outbox` table with fields: id, event_type, payload_json, created_at, processed_at, attempts, last_error.
+3. Refactor external sends to write to outbox inside the same transaction as business changes, then have a background worker deliver events to external systems.
+4. Worker behavior: visibility timeouts, exponential backoff, dead‑letter after a reasonable number of attempts; safe on restart.
+5. Add tests covering duplicate submissions, worker restarts, and eventual success.
+
+Edit files:
+- /server/db/migrations/*.ts
+- /server/services/claims/*.ts
+- /server/workers/outboxWorker.ts
+- /server/tests/claims/idempotency_outbox.test.ts
+
+Definition of done:
+- Unique index for idempotency keys exists.
+- Outbox delivers exactly once in normal and retry scenarios.
+- Tests pass.
+
+
+⸻
+
+3) Lock down the service worker cache to static assets only
+
+Goal: No protected health content ever lands in the offline cache.
+
+Tasks:
+1. Update the service worker to cache only fingerprinted static assets (scripts, styles, images). Do not cache application routes or data fetches.
+2. Add a deny list for paths like /api, /claims, /patients, /providers.
+3. Add a manual cache purge on logout.
+4. Add tests for offline behavior that prove application data is not served from cache.
+
+Edit files:
+- /web/src/service-worker.ts
+- /web/src/auth/logout.ts
+- /web/tests/offline/cache_policy.test.ts
+
+Definition of done:
+- Inspecting caches shows only static assets.
+- Offline visit to a protected route shows the sign‑in screen, not real data.
+
+
+⸻
+
+4) Encrypt offline drafts in the browser and add a device wipe
+
+Goal: When offline, drafts can be captured, but sensitive fields are encrypted at rest in the browser.
+
+Tasks:
+1. Create a small encryption module that uses the Web Cryptography interface. Derive a key from the current session plus a random salt; store the salt with the record; keep the key only in memory.
+2. Before writing draft claims to IndexedDB, encrypt fields such as names, policy numbers, diagnosis, and any note text. On read, decrypt for the signed‑in user.
+3. Add a "Wipe local data" control in settings that deletes IndexedDB, service worker caches, and local storage.
+4. Add tests that prove encrypted payloads exist at rest and are removed by the wipe control.
+
+Edit files:
+- /web/src/lib/crypto.ts
+- /web/src/data/indexeddb.ts
+- /web/src/settings/SecurityPanel.tsx
+- /web/tests/offline/encryption.test.ts
+
+Definition of done:
+- Encrypted blobs are visible in the browser storage inspector.
+- Wipe button removes all local data.
+
+
+⸻
+
+5) Make push notifications privacy‑safe
+
+Goal: Notifications never reveal personal health information.
+
+Tasks:
+1. Centralize notification templates. Replace any content that includes names, claim numbers, plan numbers, or conditions with neutral wording like "Claim status updated." Include a link back to the application.
+2. Add a safeguard that rejects templates containing restricted fields.
+3. Add tests for template validation and rendering.
+
+Edit files:
+- /server/notifications/templates.ts
+- /server/notifications/sender.ts
+- /server/tests/notifications/privacy_templates.test.ts
+
+Definition of done:
+- All notification content is neutral.
+- Tests enforce the rule.
+
+
+⸻
+
+6) Add a strict Content Security Policy and Cross Origin Resource Sharing rules
+
+Goal: Lock down external resources and origins.
+
+Tasks:
+1. Use Helmet to set a strict Content Security Policy: default‑src 'self'; script‑src 'self' plus your analytics domain; connect‑src 'self' plus your metrics domain; img‑src 'self' data:; frame‑ancestors 'none'. Enable a report endpoint.
+2. Configure Cross Origin Resource Sharing to allow only the production domain with credentials if needed.
+3. Add automated tests that assert headers are present in responses.
+
+Edit files:
+- /server/app.ts
+- /server/middleware/security.ts
+- /server/tests/security/headers.test.ts
+
+Definition of done:
+- Headers appear on all routes.
+- No wildcards present.
+
+
+⸻
+
+7) Strengthen session cookies and account protection
+
+Goal: Secure sessions and strong account recovery.
+
+Tasks:
+1. Ensure cookies are http‑only, secure, and same‑site strict. Document session lifetime and renewal.
+2. Add optional multi‑factor sign in for administrator users.
+3. Throttle password reset and sign‑in attempts and log events for audit.
+
+Edit files:
+- /server/middleware/session.ts
+- /server/routes/auth/*.ts
+- /server/tests/security/session_cookies.test.ts
+
+Definition of done:
+- Cookies have the correct flags.
+- Administrator accounts can enroll an additional factor.
+
+
+⸻
+
+8) Expand audit logging with before and after values
+
+Goal: High‑value actions are fully traceable.
+
+Tasks:
+1. For create, update, and delete on claims, patients, providers, and settings, store actor identifier, time, internet address, and before and after snapshots where lawful.
+2. Add an organization‑scoped export endpoint to download audit events.
+3. Add tests that validate redaction of sensitive fields in logs.
+
+Edit files:
+- /server/services/audit/*.ts
+- /server/routes/audit/*.ts
+- /server/tests/audit/audit_log_redaction.test.ts
+
+Definition of done:
+- Logs appear for all sensitive actions.
+- Redaction works and is tested.
+
+
+⸻
+
+9) Implement data retention timers
+
+Goal: Enforce the default seven‑year retention policy.
+
+Tasks:
+1. Add a scheduled job that flags records older than the retention period for deletion, with a grace queue and an audit entry.
+2. Add an organization override setting where allowed by law.
+3. Add tests that simulate time passing and verify deletions and logs.
+
+Edit files:
+- /server/jobs/retentionJob.ts
+- /server/routes/settings/retention.ts
+- /server/tests/compliance/retention.test.ts
+
+Definition of done:
+- Retention job deletes on schedule and logs actions.
+
+
+⸻
+
+10) Canada data residency configuration
+
+Goal: All storage remains in Canada.
+
+Tasks:
+1. Add environment variables for the database region and the object storage region and set them to Canada regions. Fail fast on startup if they are not set to Canada.
+2. Add a health check that reports the detected regions.
+3. Document the exact region names in the runbook.
+
+Edit files:
+- /server/config/index.ts
+- /server/routes/healthz.ts
+- /docs/runbooks/data_residency.md
+
+Definition of done:
+- Startup fails if regions are not Canadian.
+- Health endpoint shows the regions.
+
+
+⸻
+
+11) Privacy officer page, contact, and bilingual content
+
+Goal: Visible privacy leadership and full English and French coverage.
+
+Tasks:
+1. Add a privacy page that shows the named privacy officer, email, and a contact form.
+2. Add French translations for the full user journey, notifications, and the privacy page.
+3. Add a build check that fails if a key has missing translations.
+
+Edit files:
+- /web/src/routes/privacy/PrivacyPage.tsx
+- /web/src/i18n/en.json
+- /web/src/i18n/fr.json
+- /web/scripts/checkTranslations.ts
+
+Definition of done:
+- Privacy page renders with officer details.
+- Missing translations cause the build to fail.
+
+
+⸻
+
+12) End to end tests for the full claim journey
+
+Goal: Prove the main flow works.
+
+Tasks:
+1. Write browser tests that cover: create claim, attach files, submit, receive acknowledgement, handle rejection, resubmit, and mark as paid.
+2. Include offline steps where drafts are saved and synced when back online.
+
+Edit files:
+- /web/tests/e2e/claims.flow.spec.ts
+- /web/tests/e2e/helpers/*.ts
+
+Definition of done:
+- Tests pass locally and in the pipeline.
+
+
+⸻
+
+13) Strong rate limits per route
+
+Goal: Prevent abuse without hurting normal use.
+
+Tasks:
+1. Set low limits for sign in and password reset routes, and higher but safe limits for the application programming interface.
+2. Expose rate limit headers and log blocks.
+3. Add tests for the rate limit behavior.
+
+Edit files:
+- /server/middleware/rateLimit.ts
+- /server/tests/security/rate_limit.test.ts
+
+Definition of done:
+- Limits work as intended and are covered by tests.
+
+
+⸻
+
+14) Monitoring, metrics, and alerts
+
+Goal: See problems quickly and measure throughput.
+
+Tasks:
+1. Expose health and readiness endpoints and add a metrics endpoint with request counts, latency, job queue depth, and external system responses.
+2. Add dashboards and alerting rules in the operations folder with instructions for setup.
+
+Edit files:
+- /server/routes/healthz.ts
+- /server/routes/readyz.ts
+- /server/routes/metrics.ts
+- /docs/runbooks/monitoring.md
+
+Definition of done:
+- Endpoints respond with correct data.
+- Runbook explains how to hook them to your tool.
+
+
+⸻
+
+15) Backup and restore drill
+
+Goal: Prove recovery.
+
+Tasks:
+1. Add scripts for daily full backups and frequent incremental backups for the database and object storage, stored only in Canada.
+2. Add a restore script and a documented drill that times recovery.
+3. Store results in a log with date, time to recover, and recovery point.
+
+Edit files:
+- /ops/backups/backup.sh
+- /ops/backups/restore.sh
+- /docs/runbooks/backup_restore.md
+
+Definition of done:
+- A dry run restore completes and the timing is recorded.
+
+
+⸻
+
+16) Friendly rejection code mapping per insurer
+
+Goal: Turn raw insurer codes into guidance.
+
+Tasks:
+1. Create a mapping file for each insurer that translates rejection codes into plain guidance and next steps.
+2. Show this guidance in the claim timeline and export it in reports.
+3. Add tests for a handful of representative codes per insurer.
+
+Edit files:
+- /server/integrations/insurers/*.json
+- /web/src/components/ClaimTimeline.tsx
+- /server/tests/integrations/insurer_codes.test.ts
+
+Definition of done:
+- Users see clear guidance for rejections and tests cover mappings.
+
+
+⸻
+
+17) Carrier and network certification tracker inside the repository
+
+Goal: Make certification status visible and versioned.
+
+Tasks:
+1. Add a markdown table that lists each insurer and network with contact, legal status, test status, production endpoint, and go‑live date.
+2. Add a small admin screen to view and edit this tracker.
+
+Edit files:
+- /docs/certification_tracker.md
+- /web/src/routes/admin/CertificationTracker.tsx
+
+Definition of done:
+- File exists and renders in the admin view.
+
+
+⸻
+
+18) Payment metadata hygiene
+
+Goal: Keep personal health information out of payment systems.
+
+Tasks:
+1. Wrap payment calls so that only surrogate identifiers are sent. Never include names, plan numbers, or conditions in metadata.
+2. Add tests that validate the payloads.
+
+Edit files:
+- /server/services/payments/*.ts
+- /server/tests/payments/metadata.test.ts
+
+Definition of done:
+- Payment payloads contain only surrogate data.
+
+
+⸻
+
+19) Accessibility and performance budgets
+
+Goal: Fast and usable for everyone.
+
+Tasks:
+1. Add automated checks for keyboard navigation, label coverage, and contrast.
+2. Set budgets for initial load size and route change time and fail the build if exceeded.
+
+Edit files:
+- /web/tests/accessibility/a11y.test.ts
+- /web/scripts/perfBudgetCheck.ts
+
+Definition of done:
+- Budgets enforced and checks pass.
+
+
+⸻
+
+20) Release notes and rollback plan
+
+Goal: Safe and understandable launches.
+
+Tasks:
+1. Add a release notes template that explains changes in plain language for clinics.
+2. Add a rollback guide that shows how to pause submissions, communicate with clinics, and ship a fix.
+
+Edit files:
+- /docs/release_notes_template.md
+- /docs/runbooks/rollback.md
+
+Definition of done:
+- Templates exist and are linked from the repository readme.
+
+
+⸻
+
+21) Final launch cutover checklist
+
+Goal: Make the cutover deliberate and reversible.
+
+Tasks:
+1. Add a script that can temporarily pause outbound submissions and queue them locally.
+2. Add a cutover checklist that includes smoke tests, insurer connection checks, and a communication plan to clinics.
+3. Add a revert step that re‑enables the previous version if the error budget is exceeded during the first hour.
+
+Edit files:
+- /ops/cutover/pause_submissions.ts
+- /docs/runbooks/cutover_checklist.md
+- /docs/runbooks/revert_plan.md
+
+Definition of done:
+- You can pause and resume submissions on demand.
+- Cutover and revert runbooks are written and linked.

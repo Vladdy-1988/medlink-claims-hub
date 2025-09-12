@@ -258,7 +258,7 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                   </div>
                 )}
 
-                {claim.codes && Array.isArray(claim.codes) && claim.codes.length > 0 && (
+                {claim.codes && Array.isArray(claim.codes) && claim.codes.length > 0 ? (
                   <div>
                     <h3 className="font-medium mb-3">Service Codes</h3>
                     <div className="flex flex-wrap gap-2">
@@ -269,7 +269,7 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
                       ))}
                     </div>
                   </div>
-                )}
+                ) : null}
               </CardContent>
             </Card>
 

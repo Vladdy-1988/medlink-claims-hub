@@ -314,14 +314,14 @@ export default function Admin() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {(!auditEvents || auditEvents.length === 0) ? (
+                    {(!auditEvents || (Array.isArray(auditEvents) && auditEvents.length === 0)) ? (
                       <div className="text-center py-8 text-slate-500">
                         <i className="fas fa-history text-4xl mb-4 text-slate-300"></i>
                         <p className="text-lg font-medium">No audit events found</p>
                         <p className="text-sm">System events will appear here once activities begin</p>
                       </div>
                     ) : (
-                      auditEvents.map((event: any) => (
+                      Array.isArray(auditEvents) && auditEvents.map((event: any) => (
                         <div
                           key={event.id}
                           className="flex items-start space-x-3 p-4 bg-slate-50 rounded-lg"
