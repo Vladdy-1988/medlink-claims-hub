@@ -125,6 +125,7 @@ export const claims = pgTable("claims", {
   providerId: uuid("provider_id").references(() => providers.id).notNull(),
   insurerId: uuid("insurer_id").references(() => insurers.id).notNull(),
   appointmentId: uuid("appointment_id").references(() => appointments.id),
+  claimNumber: varchar("claim_number"), // Add missing claim number field
   type: claimTypeEnum("type").notNull(),
   status: claimStatusEnum("status").notNull().default("draft"),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),

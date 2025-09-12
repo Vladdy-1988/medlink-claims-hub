@@ -15,43 +15,27 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
       // 1. Setup test data
       const testOrg = await storage.createOrganization({
         name: 'EDI Test Clinic',
-        type: 'clinic',
-        address: '123 Test Street',
-        city: 'Toronto', 
-        province: 'ON',
-        postalCode: 'M5V 3A3',
-        phone: '416-555-0123',
-        email: 'test@ediclinic.com'
+        province: 'ON'
       });
 
       const testProvider = await storage.createProvider({
         orgId: testOrg.id,
         name: 'Dr. Test Provider',
-        licenseNumber: 'TEST123456',
-        specialty: 'General Practice',
-        phone: '416-555-0124',
-        email: 'provider@ediclinic.com',
-        address: '123 Test Street',
-        city: 'Toronto',
-        province: 'ON', 
-        postalCode: 'M5V 3A3'
+        licenceNumber: 'TEST123456',
+        discipline: 'General Practice'
       });
 
       const testPatient = await storage.createPatient({
         orgId: testOrg.id,
         name: 'Test Patient',
-        healthCardNumber: '9876543210',
-        dateOfBirth: '1985-03-20',
-        gender: 'female',
-        phone: '416-555-0125',
-        email: 'patient@example.com',
-        address: '456 Patient Ave',
-        city: 'Toronto',
-        province: 'ON',
-        postalCode: 'M4B 1B3'
+        dob: new Date('1985-03-20'),
+        identifiers: { healthCard: '9876543210' },
+        // Additional fields removed - not in schema
       });
 
-      const testInsurer = await storage.createInsurer({
+      // Mock insurer data (storage doesn't have createInsurer)
+      const testInsurer = {
+        id: 'test-insurer-' + Date.now(),
         name: 'Test Insurance Co',
         code: 'TIC',
         phone: '1-800-555-0100',
@@ -59,7 +43,7 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
         city: 'Toronto',
         province: 'ON',
         postalCode: 'M1A 1A1'
-      });
+      };
 
       // 2. Setup connector configs
       await storage.upsertConnectorConfig({
@@ -81,7 +65,7 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
         mode: 'sandbox',
         settings: {
           providerId: testProvider.id,
-          licenseNumber: testProvider.licenseNumber
+          licenseNumber: testProvider.licenceNumber
         }
       });
 
@@ -91,7 +75,7 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'treatment',
+        type: 'claim',
         status: 'draft',
         amount: '95.00',
         currency: 'CAD',
@@ -105,7 +89,7 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
         patientId: testPatient.id,
         providerId: testProvider.id,
         insurerId: testInsurer.id,
-        type: 'treatment',
+        type: 'claim',
         status: 'draft',
         amount: '75.00',
         currency: 'CAD', 
@@ -134,12 +118,12 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
           connector: 'cdanet'
         });
         
-        results.cdanet = { status: 'submitted', jobId, error: null };
+        results.cdanet = { status: 'submitted', jobId: jobId || null, error: null };
         console.log('✅ CDAnet connector test passed');
         
-      } catch (error) {
-        results.cdanet.error = error.message;
-        console.error('❌ CDAnet test failed:', error.message);
+      } catch (error: any) {
+        results.cdanet.error = error?.message || String(error);
+        console.error('❌ CDAnet test failed:', error?.message || String(error));
       }
 
       // Test eClaims  
@@ -153,12 +137,12 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
           connector: 'eclaims'
         });
         
-        results.eclaims = { status: 'submitted', jobId, error: null };
+        results.eclaims = { status: 'submitted', jobId: jobId || null, error: null };
         console.log('✅ eClaims connector test passed');
         
-      } catch (error) {
-        results.eclaims.error = error.message;
-        console.error('❌ eClaims test failed:', error.message);
+      } catch (error: any) {
+        results.eclaims.error = error?.message || String(error);
+        console.error('❌ eClaims test failed:', error?.message || String(error));
       }
 
       console.log('\n🎉 EDI Connector Test Complete!\n');
@@ -176,12 +160,12 @@ export function registerTestRoutes(app: Express, storage: IStorage) {
         results
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ EDI Test Error:', error);
       res.status(500).json({
         success: false,
         message: 'EDI connector test failed',
-        error: error.message
+        error: error?.message || String(error)
       });
     }
   });

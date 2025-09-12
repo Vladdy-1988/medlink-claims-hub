@@ -34,12 +34,12 @@ export default function Remittances() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: remittances, isLoading: remittancesLoading, error } = useQuery({
+  const { data: remittances = [], isLoading: remittancesLoading, error } = useQuery<any[]>({
     queryKey: ["/api/remittances"],
     retry: false,
   });
 
-  const { data: insurers } = useQuery({
+  const { data: insurers = [] } = useQuery<any[]>({
     queryKey: ["/api/insurers"],
     retry: false,
   });
@@ -101,7 +101,7 @@ export default function Remittances() {
     if (files.length > 0) {
       const file = files[0];
       uploadRemittanceMutation.mutate({
-        insurerId: insurers?.[0]?.id || '',
+        insurerId: insurers && insurers.length > 0 ? insurers[0].id : '',
         status: 'received',
         raw: { fileName: file.name, fileUrl: file.url },
       });
@@ -306,7 +306,7 @@ export default function Remittances() {
                               </div>
                               <div>
                                 <div className="text-sm font-medium text-slate-900">
-                                  {insurers?.find((i: any) => i.id === remittance.insurerId)?.name || 'Unknown Insurer'}
+                                  {insurers.find((i: any) => i.id === remittance.insurerId)?.name || 'Unknown Insurer'}
                                 </div>
                               </div>
                             </div>

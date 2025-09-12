@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm';
 import type { Claim } from '../../shared/schema';
 
 export class CDAnetITransConnector extends BaseConnector {
-  private config: any;
+  protected config: any;
 
   async validate(claim: Claim): Promise<void> {
     this.debug('Validating claim for CDAnet submission', { claimId: claim.id });
@@ -194,9 +194,12 @@ export class CDAnetITransConnector extends BaseConnector {
       const claimId = externalId.replace('ITRANS-SBX-', '');
       
       // Get claim to determine amount for simulation
-      const [claim] = await db
+      const { claims } = require('../../shared/schema');
+      const claimResults = await db
         .select()
-        .from(db.select().from(require('../../shared/schema').claims).where(eq(require('../../shared/schema').claims.id, claimId)));
+        .from(claims)
+        .where(eq(claims.id, claimId));
+      const claim = claimResults[0];
       
       if (!claim) {
         throw new ConnectorError('VALIDATION_ERROR', `Claim ${claimId} not found`);
