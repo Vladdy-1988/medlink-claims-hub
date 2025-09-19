@@ -1,8 +1,20 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { initSentry, getSentryMiddleware } from "./monitoring/sentry";
 
 const app = express();
+
+// Initialize Sentry before other middleware
+initSentry(app);
+const sentryMiddleware = getSentryMiddleware();
+
+// Add Sentry request handler (must be first)
+app.use(sentryMiddleware.requestHandler);
+
+// Add Sentry tracing handler
+app.use(sentryMiddleware.tracingHandler);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -50,6 +62,9 @@ app.use((req, res, next) => {
   }
   
   const server = await registerRoutes(app);
+
+  // Add Sentry error handler (must be before other error handlers)
+  app.use(sentryMiddleware.errorHandler);
 
   app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     // Don't interfere with static asset serving

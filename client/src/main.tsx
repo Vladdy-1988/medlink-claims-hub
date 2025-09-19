@@ -1,6 +1,10 @@
 import { createRoot } from "react-dom/client";
 import "./index-clean.css";
 import App from "./App";
+import { initSentry, ErrorBoundary } from "./lib/sentry";
+
+// Initialize Sentry before React app
+initSentry();
 
 // Add global error handler to catch any unhandled errors
 window.addEventListener('error', (event) => {
@@ -33,8 +37,26 @@ try {
   if (rootElement) {
     console.log('✅ Root element found, creating React root...');
     const root = createRoot(rootElement);
-    root.render(<App />);
-    console.log('✅ React app rendered successfully');
+    root.render(
+      <ErrorBoundary
+        fallback={({ error }) => (
+          <div style={{ padding: '20px', textAlign: 'center' }}>
+            <h1>Application Error</h1>
+            <p>Something went wrong. Please try refreshing the page.</p>
+            {process.env.NODE_ENV === 'development' && (
+              <details style={{ marginTop: '20px', textAlign: 'left' }}>
+                <summary>Error details (development only)</summary>
+                <pre>{error?.message || 'Unknown error'}</pre>
+              </details>
+            )}
+          </div>
+        )}
+        showDialog={false}
+      >
+        <App />
+      </ErrorBoundary>
+    );
+    console.log('✅ React app rendered successfully with error boundary');
   } else {
     console.error("❌ Root element not found!");
     // Create a fallback message

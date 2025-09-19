@@ -61,10 +61,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // SSO login endpoint (before regular auth middleware)
   app.post('/auth/sso', handleSSOLogin);
 
-  // Legacy health check route
-  app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
+  // Health check routes (using enhanced health check functions)
+  app.get('/health', healthCheck);
+  app.get('/api/health', healthCheck);
+  app.get('/api/ready', readinessCheck);
+  app.get('/api/metrics', metricsEndpoint);
 
   // SKIP AUTH COMPLETELY IN DEVELOPMENT MODE
   if (process.env.NODE_ENV === 'development') {
