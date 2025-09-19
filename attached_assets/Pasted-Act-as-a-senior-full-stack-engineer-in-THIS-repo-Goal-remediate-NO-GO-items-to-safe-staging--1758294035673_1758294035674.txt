@@ -1,0 +1,80 @@
+Act as a senior full-stack engineer in THIS repo. Goal: remediate “NO-GO” items to safe **staging** readiness (not production). Create branch `remediation/launch-readiness`, work there, and open a draft PR to `main`. Don’t claim legal compliance—document gaps. When done, produce a FINAL_READINESS_CHECKLIST.md mapping fixes to files/commits.
+
+1) Fix CSS MIME / static assets
+- Ensure Vite builds to `dist/` with `/assets/*.css`.
+- Express server: serve static BEFORE any API catch-all.
+  Example:
+    app.use(express.static(path.join(__dirname,'dist')));
+    app.get('/healthz', (_req,res)=>res.status(200).send('ok'));
+    app.get('*', (_req,res)=>res.sendFile(path.join(__dirname,'dist','index.html')));
+- Verify `/assets/*.css` returns `Content-Type: text/css`.
+- Add docs/troubleshooting/css-mime.md with what changed.
+
+2) Security headers baseline
+- Add Helmet with CSP off for now, set HSTS, referrerPolicy, secure/httponly/samesite cookies.
+- Document in docs/security/headers.md.
+
+3) Monitoring & health
+- Integrate Sentry (backend: @sentry/node; frontend: @sentry/react) gated by env vars.
+  ENV: SENTRY_DSN, SENTRY_ENV=remediation, RELEASE_SHA (commit).
+- Ensure /healthz returns 200 OK.
+- Add scripts/uptime.sh that curls /healthz and exits non-zero on failure.
+- Document wiring to any uptime service.
+
+4) Secrets audit
+- Remove any hard-coded secrets. Read from process.env.
+- Create `.env.example` with placeholders for DATABASE_URL, SENTRY_DSN, NODE_ENV, etc.
+- docs/security/secrets.md: rotation and least-privilege policy.
+
+5) Backups & DR (STAGING ONLY now)
+- Add scripts/backup/pg_dump.sh to dump from $STAGING_DATABASE_URL.
+- Nightly GitHub Actions workflow `.github/workflows/staging-db-backup.yml` uploads to S3 with server-side encryption (no dumps in repo/artifacts).
+- Add manual restore test workflow `.github/workflows/staging-restore-test.yml` that restores to a temp DB and runs a smoke query.
+- docs/runbooks/dr.md: step-by-step restore; targets RPO≤24h, RTO≤4h.
+- Create PROD scripts but comment: “do not enable until compliance gate.”
+
+6) RBAC hardening
+- Roles: patient, provider, staff, admin.
+- Middleware route guards; admin-only routes fenced.
+- Add tests for permitted/denied access.
+
+7) Audit logging (no PHI content)
+- On PHI-touching endpoints, log structured events: ts, userId, role, action, resourceId, purpose.
+- Daily rotation; scripts/audit/export-audit-report.ts for CSV by date range.
+- docs/security/audit-logging.md with retention.
+
+8) CI pipeline
+- `.github/workflows/ci.yml`: node setup, npm ci, lint, typecheck, tests (vitest/jest).
+- Add GitHub CodeQL for JS/TS. Fail PRs on errors.
+- Update README with CI status.
+
+9) Minimal load test
+- Add k6 scripts: load/smoke.js and load/peak.js that hit auth (if any), list claims, claim detail.
+- `.github/workflows/k6.yml` manual run (workflow_dispatch) with BASE_URL input. Print p95 latency + error rate.
+- docs/perf/budget.md with initial targets (e.g., p95 < 400ms on /api/claims under N users).
+
+10) i18n
+- Wire i18next (or react-intl). Extract UI strings to `locales/en.json`.
+- Add `locales/fr.json` with 5 example keys translated.
+- docs/i18n.md: how to add/translate strings.
+
+11) PWA
+- Add `manifest.webmanifest`, link in index.html.
+- Generate icons (192, 512, maskable). Use vite-plugin-pwa with injectManifest and offline shell fallback.
+- docs/pwa.md; verify installable in Lighthouse.
+
+12) Final checklist
+- Create FINAL_READINESS_CHECKLIST.md mapping each NO-GO area to commits/files (backups, monitoring, headers, secrets, RBAC, audit, CI, load tests, i18n, PWA, docs). List remaining gaps with Owner=Vlad and target dates.
+
+ACCEPTANCE (verify before finishing):
+- No CSS MIME errors; styles load; `/assets/*.css` is `text/css`.
+- Security headers present (HSTS, Helmet). Cookies secure/httponly/samesite where used.
+- Sentry sends events when DSN set; `/healthz` OK; uptime script works.
+- `.env.example` present; no secrets in code.
+- Staging backup workflow succeeds; restore test creates temp DB and runs a query; no dumps in repo or artifacts.
+- RBAC tests pass; protected routes reject improper roles.
+- Audit logs emitted on PHI endpoints; CSV export works.
+- CI blocks failing PRs; CodeQL workflow active.
+- k6 scripts run locally and via workflow_dispatch; p95 + error rate output.
+- i18n toggles EN↔FR for sample labels.
+- App is PWA-installable; icons valid.
