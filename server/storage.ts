@@ -40,6 +40,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
+import { fieldEncryption, encryptRecord, decryptRecord } from "./security/encryption";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -113,48 +114,54 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    return user ? decryptRecord('users', user) : undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
+    // For email searches, we need to encrypt the search value for comparison
+    // Note: This requires deterministic encryption for email field or storing a hash
     const [user] = await db.select().from(users).where(eq(users.email, email));
-    return user;
+    return user ? decryptRecord('users', user) : undefined;
   }
 
   async createUser(userData: InsertUser): Promise<User> {
+    const encryptedData = encryptRecord('users', userData);
     const [user] = await db
       .insert(users)
-      .values(userData)
+      .values(encryptedData)
       .returning();
-    return user;
+    return decryptRecord('users', user);
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    const dataWithOrg = {
+      ...userData,
+      // Auto-assign to first organization for development
+      orgId: userData.orgId || (await this.getFirstOrganization())?.id,
+    };
+    const encryptedData = encryptRecord('users', dataWithOrg);
     const [user] = await db
       .insert(users)
-      .values({
-        ...userData,
-        // Auto-assign to first organization for development
-        orgId: userData.orgId || (await this.getFirstOrganization())?.id,
-      })
+      .values(encryptedData)
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          ...userData,
+          ...encryptedData,
           updatedAt: new Date(),
         },
       })
       .returning();
-    return user;
+    return decryptRecord('users', user);
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const encryptedUpdates = encryptRecord('users', { ...updates, updatedAt: new Date() });
     const [user] = await db
       .update(users)
-      .set({ ...updates, updatedAt: new Date() })
+      .set(encryptedUpdates)
       .where(eq(users.id, id))
       .returning();
-    return user;
+    return user ? decryptRecord('users', user) : undefined;
   }
 
   async getFirstOrganization(): Promise<{ id: string } | undefined> {
@@ -164,48 +171,51 @@ export class DatabaseStorage implements IStorage {
 
   async getOrganization(id: string): Promise<Organization | undefined> {
     const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
-    return org;
+    return org ? decryptRecord('organizations', org) : undefined;
   }
 
   async getOrganizationById(id: string): Promise<Organization | undefined> {
     const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
-    return org;
+    return org ? decryptRecord('organizations', org) : undefined;
   }
 
   async getOrganizationByExternalId(externalId: string): Promise<Organization | undefined> {
     const [org] = await db.select().from(organizations).where(eq(organizations.externalId, externalId));
-    return org;
+    return org ? decryptRecord('organizations', org) : undefined;
   }
 
   async createOrganization(orgData: InsertOrganization): Promise<Organization> {
     // Remove externalId if it exists since the column may not be in the database yet
     const { externalId, ...safeOrgData } = orgData as any;
-    const [org] = await db.insert(organizations).values(safeOrgData).returning();
-    return org;
+    const encryptedData = encryptRecord('organizations', safeOrgData);
+    const [org] = await db.insert(organizations).values(encryptedData).returning();
+    return decryptRecord('organizations', org);
   }
 
 
 
   async getPatient(id: string): Promise<Patient | undefined> {
     const [patient] = await db.select().from(patients).where(eq(patients.id, id));
-    return patient;
+    return patient ? decryptRecord('patients', patient) : undefined;
   }
 
   async createPatient(patientData: InsertPatient): Promise<Patient> {
-    const [patient] = await db.insert(patients).values(patientData).returning();
-    return patient;
+    const encryptedData = encryptRecord('patients', patientData);
+    const [patient] = await db.insert(patients).values(encryptedData).returning();
+    return decryptRecord('patients', patient);
   }
 
 
 
   async getProvider(id: string): Promise<Provider | undefined> {
     const [provider] = await db.select().from(providers).where(eq(providers.id, id));
-    return provider;
+    return provider ? decryptRecord('providers', provider) : undefined;
   }
 
   async createProvider(providerData: InsertProvider): Promise<Provider> {
-    const [provider] = await db.insert(providers).values(providerData).returning();
-    return provider;
+    const encryptedData = encryptRecord('providers', providerData);
+    const [provider] = await db.insert(providers).values(encryptedData).returning();
+    return decryptRecord('providers', provider);
   }
 
   async getInsurers(): Promise<Insurer[]> {
@@ -230,39 +240,46 @@ export class DatabaseStorage implements IStorage {
       baseConditions.push(eq(claims.createdBy, userId));
     }
     
-    return await db
+    const results = await db
       .select()
       .from(claims)
       .where(and(...baseConditions))
       .orderBy(desc(claims.createdAt));
+    
+    // Decrypt all claims
+    return results.map(claim => decryptRecord('claims', claim));
   }
 
   async getClaim(id: string): Promise<Claim | undefined> {
     const [claim] = await db.select().from(claims).where(eq(claims.id, id));
-    return claim;
+    return claim ? decryptRecord('claims', claim) : undefined;
   }
 
   async createClaim(claimData: InsertClaim): Promise<Claim> {
-    const [claim] = await db.insert(claims).values(claimData).returning();
-    return claim;
+    const encryptedData = encryptRecord('claims', claimData);
+    const [claim] = await db.insert(claims).values(encryptedData).returning();
+    return decryptRecord('claims', claim);
   }
 
   async updateClaim(id: string, updates: Partial<Claim>): Promise<Claim | undefined> {
+    const encryptedUpdates = encryptRecord('claims', { ...updates, updatedAt: new Date() });
     const [claim] = await db
       .update(claims)
-      .set({ ...updates, updatedAt: new Date() })
+      .set(encryptedUpdates)
       .where(eq(claims.id, id))
       .returning();
-    return claim;
+    return claim ? decryptRecord('claims', claim) : undefined;
   }
 
   async getAttachments(claimId: string): Promise<Attachment[]> {
-    return await db.select().from(attachments).where(eq(attachments.claimId, claimId));
+    const results = await db.select().from(attachments).where(eq(attachments.claimId, claimId));
+    return results.map(att => decryptRecord('attachments', att));
   }
 
   async createAttachment(attachmentData: InsertAttachment): Promise<Attachment> {
-    const [attachment] = await db.insert(attachments).values(attachmentData).returning();
-    return attachment;
+    const encryptedData = encryptRecord('attachments', attachmentData);
+    const [attachment] = await db.insert(attachments).values(encryptedData).returning();
+    return decryptRecord('attachments', attachment);
   }
 
   async getRemittances(orgId: string): Promise<Remittance[]> {
@@ -279,26 +296,30 @@ export class DatabaseStorage implements IStorage {
       .from(remittances)
       .innerJoin(insurers, eq(remittances.insurerId, insurers.id))
       .orderBy(desc(remittances.createdAt));
-    return results;
+    // Decrypt raw field which may contain PHI
+    return results.map(r => decryptRecord('remittances', r));
   }
 
   async createRemittance(remittanceData: InsertRemittance): Promise<Remittance> {
-    const [remittance] = await db.insert(remittances).values(remittanceData).returning();
-    return remittance;
+    const encryptedData = encryptRecord('remittances', remittanceData);
+    const [remittance] = await db.insert(remittances).values(encryptedData).returning();
+    return decryptRecord('remittances', remittance);
   }
 
   async createAuditEvent(eventData: InsertAuditEvent): Promise<AuditEvent> {
-    const [event] = await db.insert(auditEvents).values(eventData).returning();
-    return event;
+    const encryptedData = encryptRecord('auditEvents', eventData);
+    const [event] = await db.insert(auditEvents).values(encryptedData).returning();
+    return decryptRecord('auditEvents', event);
   }
 
   async getAuditEvents(orgId: string, limit = 100): Promise<AuditEvent[]> {
-    return await db
+    const results = await db
       .select()
       .from(auditEvents)
       .where(eq(auditEvents.orgId, orgId))
       .orderBy(desc(auditEvents.createdAt))
       .limit(limit);
+    return results.map(event => decryptRecord('auditEvents', event));
   }
 
   async createAuditLog(event: any): Promise<any> {
@@ -307,11 +328,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClaimsByStatus(statuses: string[]): Promise<Claim[]> {
-    return await db
+    const results = await db
       .select()
       .from(claims)
       .where(sql`${claims.status} = ANY(${statuses})`)
       .orderBy(desc(claims.updatedAt));
+    return results.map(claim => decryptRecord('claims', claim));
   }
 
   async getDashboardStats(orgId: string): Promise<{
@@ -364,12 +386,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateClaimStatus(id: string, status: string): Promise<void> {
+    // Status is not PHI, but we still use encryptRecord for consistency
+    const updates = { 
+      status: status as any,
+      updatedAt: new Date(),
+    };
     await db
       .update(claims)
-      .set({ 
-        status: status as any,
-        updatedAt: new Date(),
-      })
+      .set(updates)
       .where(eq(claims.id, id));
   }
 
@@ -442,11 +466,13 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(patients.id, filter.id));
     }
     
-    return await db
+    const results = await db
       .select()
       .from(patients)
       .where(and(...conditions))
       .orderBy(asc(patients.name));
+    
+    return results.map(patient => decryptRecord('patients', patient));
   }
 
   async getProviders(orgId: string, filter?: { id?: string }): Promise<Provider[]> {
@@ -455,11 +481,13 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(providers.id, filter.id));
     }
     
-    return await db
+    const results = await db
       .select()
       .from(providers)
       .where(and(...conditions))
       .orderBy(asc(providers.name));
+    
+    return results.map(provider => decryptRecord('providers', provider));
   }
 }
 
