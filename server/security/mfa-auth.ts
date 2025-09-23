@@ -7,6 +7,7 @@ import speakeasy from 'speakeasy';
 import qrcode from 'qrcode';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { usersRepo } from '../db/repo';
 
 // Rate limiting store (in production, use Redis)
@@ -182,33 +183,48 @@ export async function shouldRequireMFA(userId: string): Promise<boolean> {
   return user.role === 'admin' && user.mfaEnabled === true;
 }
 
+// Get MFA token secret (use environment variable or fallback to app secret)
+function getMFATokenSecret(): string {
+  return process.env.MFA_TOKEN_SECRET || process.env.ENCRYPTION_KEY || 'mfa-temp-secret-key';
+}
+
 // Generate a temporary token for MFA challenge
 export function generateTempToken(userId: string): string {
   const payload = {
     userId,
     purpose: 'mfa_challenge',
-    expires: Date.now() + (5 * 60 * 1000) // 5 minutes
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 300 // 5 minutes
   };
   
-  // In production, use JWT
-  return Buffer.from(JSON.stringify(payload)).toString('base64');
+  // Sign with JWT for secure token generation
+  return jwt.sign(payload, getMFATokenSecret(), { 
+    algorithm: 'HS256'
+  });
 }
 
 // Verify temporary token
 export function verifyTempToken(token: string): { userId: string; valid: boolean } {
   try {
-    const payload = JSON.parse(Buffer.from(token, 'base64').toString());
+    const decoded = jwt.verify(token, getMFATokenSecret(), {
+      algorithms: ['HS256'],
+      clockTolerance: 5 // Allow 5 seconds clock skew
+    }) as any;
     
-    if (payload.purpose !== 'mfa_challenge') {
+    if (decoded.purpose !== 'mfa_challenge') {
       return { userId: '', valid: false };
     }
     
-    if (Date.now() > payload.expires) {
+    if (!decoded.userId) {
       return { userId: '', valid: false };
     }
     
-    return { userId: payload.userId, valid: true };
-  } catch {
+    return { userId: decoded.userId, valid: true };
+  } catch (error) {
+    // Log JWT verification errors for debugging
+    if (error instanceof jwt.JsonWebTokenError) {
+      console.warn('MFA token verification failed:', error.message);
+    }
     return { userId: '', valid: false };
   }
 }

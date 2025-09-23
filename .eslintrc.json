@@ -1,0 +1,50 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "module",
+    "project": "./tsconfig.json"
+  },
+  "env": {
+    "node": true,
+    "es6": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "plugins": [
+    "@typescript-eslint",
+    "no-restricted-imports"
+  ],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["*/db", "*/db.ts"],
+            "message": "Direct database imports are forbidden outside server/db/. Use the repository layer (server/db/repo.ts) instead."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.object.name='db'][callee.property.name=/^(query|insert|update|select|delete|execute)$/]",
+        "message": "Direct database operations are forbidden. Use the repository layer (server/db/repo.ts) instead."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["server/db/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": "off",
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
+}

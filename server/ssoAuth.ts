@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import type { Request, Response } from 'express';
 import { storage } from './storage';
 import { z } from 'zod';
+import { shouldRequireMFA, generateTempToken } from './security/mfa-auth';
 
 const ssoTokenSchema = z.object({
   token: z.string(),
@@ -132,7 +133,36 @@ export async function handleSSOLogin(req: Request, res: Response) {
       userAgent: req.get('User-Agent') || '',
     });
 
-    // Create session (similar to Replit Auth)
+    // Check if MFA is required for this user
+    const mfaRequired = await shouldRequireMFA(user.id);
+    
+    if (mfaRequired) {
+      // Generate temporary token for MFA challenge
+      const tempToken = generateTempToken(user.id);
+      
+      // Log MFA challenge initiated
+      await storage.createAuditEvent({
+        orgId: organization.id,
+        actorUserId: user.id,
+        type: 'mfa_challenge_initiated',
+        details: {
+          email: payload.email,
+          role: payload.role
+        },
+        ip: req.ip || '',
+        userAgent: req.get('User-Agent') || '',
+      });
+      
+      // Return MFA required response
+      return res.json({
+        ok: true,
+        mfaRequired: true,
+        tempToken,
+        message: 'MFA verification required'
+      });
+    }
+
+    // No MFA required, proceed with session creation
     const sessionUser = {
       claims: {
         sub: user.id,
@@ -156,7 +186,8 @@ export async function handleSSOLogin(req: Request, res: Response) {
 
       res.json({ 
         ok: true, 
-        redirect: next || '/' 
+        redirect: next || '/',
+        mfaRequired: false
       });
     });
 

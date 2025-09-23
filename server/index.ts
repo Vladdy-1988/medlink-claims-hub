@@ -51,9 +51,17 @@ app.use((req, res, next) => {
 (async () => {
   // Check and verify encryption key on startup
   if (!process.env.ENCRYPTION_KEY) {
-    console.error('❌ ENCRYPTION_KEY environment variable is required for field-level encryption');
-    console.log('⚠️  Setting default ENCRYPTION_KEY for development - DO NOT USE IN PRODUCTION');
-    process.env.ENCRYPTION_KEY = 'ZZZTESTSECRET_123_DEV_KEY_32CHR';
+    if (process.env.NODE_ENV === 'production') {
+      // HARD FAIL in production - no fallback allowed
+      console.error('❌ CRITICAL: ENCRYPTION_KEY environment variable is REQUIRED in production');
+      console.error('❌ Application startup aborted for security. Please set ENCRYPTION_KEY.');
+      process.exit(1);
+    } else {
+      // Development mode - allow with warning but still set a dev key
+      console.warn('⚠️  WARNING: ENCRYPTION_KEY not set - using development key');
+      console.warn('⚠️  This is ONLY acceptable in development mode');
+      process.env.ENCRYPTION_KEY = 'DEV_ONLY_KEY_DO_NOT_USE_IN_PRODUCTION_32CHARS';
+    }
   }
   
   // Verify field-level encryption is working
@@ -61,11 +69,23 @@ app.use((req, res, next) => {
     const { verifyEncryption } = await import("./security/field-encryption");
     if (!verifyEncryption()) {
       console.error('❌ Field-level encryption verification failed');
-      process.exit(1);
+      if (process.env.NODE_ENV === 'production') {
+        console.error('❌ CRITICAL: Encryption verification failed in production');
+        process.exit(1);
+      } else {
+        console.warn('⚠️  Encryption verification failed in development - continuing anyway');
+      }
+    } else {
+      console.log('✅ Field-level encryption verified and working');
     }
   } catch (error) {
     console.error('❌ Failed to initialize field-level encryption:', error);
-    process.exit(1);
+    if (process.env.NODE_ENV === 'production') {
+      console.error('❌ CRITICAL: Cannot start production without working encryption');
+      process.exit(1);
+    } else {
+      console.warn('⚠️  Encryption initialization failed in development - continuing anyway');
+    }
   }
   
   // Run one-time seed guard on boot
@@ -79,6 +99,20 @@ app.use((req, res, next) => {
   } catch (error) {
     console.error('❌ Failed to initialize EDI job queue:', error);
   }
+  
+  // Global EDI blocking enforcement - patch fetch
+  // Note: Node.js http/https modules cannot be patched due to read-only properties
+  // Instead, we enforce usage of safeFetch, safeHttpsRequest in application code
+  const { safeFetch, verifySandboxMode } = await import("./net/allowlist");
+  
+  // Monkey-patch global fetch to use safe version
+  (globalThis as any).fetch = safeFetch;
+  
+  // Verify sandbox mode configuration
+  verifySandboxMode();
+  
+  console.log('✅ Global fetch patched with EDI allowlist enforcement');
+  console.log('   Note: Direct http/https usage should be replaced with safeFetch');
   
   const server = await registerRoutes(app);
 

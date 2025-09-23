@@ -21,7 +21,7 @@ import { encryptPHI, decryptPHI, hashForSearch } from '../security/field-encrypt
 // PHI fields that must be encrypted
 const PHI_FIELDS: Record<string, string[]> = {
   patients: ['name', 'email', 'phone', 'address'],
-  users: ['email', 'phone'],
+  users: ['email', 'phone', 'mfaSecret'],
   providers: ['email', 'phone'],
   claims: ['notes'],
   preAuths: ['notes'],
