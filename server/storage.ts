@@ -108,7 +108,19 @@ export interface IStorage {
   createConnectorError(error: InsertConnectorError): Promise<ConnectorError>;
   getConnectorEvents(claimId: string): Promise<ConnectorTransaction[]>;
 
-
+  // MFA operations
+  updateUserMFA(id: string, updates: {
+    mfaSecret?: string | null;
+    mfaEnabled?: boolean;
+    mfaBackupCodes?: string[] | null;
+    mfaEnforcedAt?: Date | null;
+  }): Promise<User | undefined>;
+  getUserMFA(id: string): Promise<{
+    mfaSecret: string | null;
+    mfaEnabled: boolean;
+    mfaBackupCodes: string[] | null;
+    mfaEnforcedAt: Date | null;
+  } | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -457,6 +469,64 @@ export class DatabaseStorage implements IStorage {
       .from(connectorTransactions)
       .where(eq(connectorTransactions.claimId, claimId))
       .orderBy(desc(connectorTransactions.createdAt));
+  }
+
+  // MFA operations
+  async updateUserMFA(id: string, updates: {
+    mfaSecret?: string | null;
+    mfaEnabled?: boolean;
+    mfaBackupCodes?: string[] | null;
+    mfaEnforcedAt?: Date | null;
+  }): Promise<User | undefined> {
+    const mfaData: any = {};
+    
+    if ('mfaSecret' in updates) {
+      mfaData.mfaSecret = updates.mfaSecret;
+    }
+    if ('mfaEnabled' in updates) {
+      mfaData.mfaEnabled = updates.mfaEnabled;
+    }
+    if ('mfaBackupCodes' in updates) {
+      mfaData.mfaBackupCodes = updates.mfaBackupCodes ? JSON.stringify(updates.mfaBackupCodes) : null;
+    }
+    if ('mfaEnforcedAt' in updates) {
+      mfaData.mfaEnforcedAt = updates.mfaEnforcedAt;
+    }
+    
+    const encryptedData = encryptRecord('users', { ...mfaData, updatedAt: new Date() });
+    const [user] = await db
+      .update(users)
+      .set(encryptedData)
+      .where(eq(users.id, id))
+      .returning();
+    return user ? decryptRecord('users', user) : undefined;
+  }
+
+  async getUserMFA(id: string): Promise<{
+    mfaSecret: string | null;
+    mfaEnabled: boolean;
+    mfaBackupCodes: string[] | null;
+    mfaEnforcedAt: Date | null;
+  } | undefined> {
+    const [user] = await db
+      .select({
+        mfaSecret: users.mfaSecret,
+        mfaEnabled: users.mfaEnabled,
+        mfaBackupCodes: users.mfaBackupCodes,
+        mfaEnforcedAt: users.mfaEnforcedAt,
+      })
+      .from(users)
+      .where(eq(users.id, id));
+    
+    if (!user) return undefined;
+    
+    const decrypted = decryptRecord('users', user);
+    return {
+      mfaSecret: decrypted.mfaSecret || null,
+      mfaEnabled: decrypted.mfaEnabled || false,
+      mfaBackupCodes: decrypted.mfaBackupCodes ? JSON.parse(decrypted.mfaBackupCodes) : null,
+      mfaEnforcedAt: decrypted.mfaEnforcedAt || null,
+    };
   }
 
   // Enhanced methods for EDI requirements

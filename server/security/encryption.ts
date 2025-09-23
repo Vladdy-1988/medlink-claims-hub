@@ -21,7 +21,7 @@ type EncryptionConfig = z.infer<typeof EncryptionConfigSchema>;
 
 // PHI field mapping - defines which fields need encryption
 export const PHI_FIELDS = {
-  users: ['firstName', 'lastName', 'email'],
+  users: ['firstName', 'lastName', 'email', 'mfaSecret', 'mfaBackupCodes'],
   patients: ['name', 'dob', 'identifiers'],
   providers: ['name', 'licenceNumber'],
   claims: ['notes', 'claimNumber'],
