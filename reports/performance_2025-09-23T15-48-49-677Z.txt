@@ -1,0 +1,35 @@
+=== MEDLINK CLAIMS HUB LOAD TEST RESULTS ===
+
+Test completed at: 2025-09-23T15:48:49.741Z
+Total duration: 4435.832313ms
+
+=== SLO COMPLIANCE ===
+http_req_duration: p95=237.42114775ms (PASS), p99=238.87022954999998ms (PASS)
+http_req_failed: 0.00% (PASS)
+
+=== KEY METRICS ===
+http_req_duration{endpoint:dashboard_stats}: avg=N/Ams, p95=N/Ams
+http_req_duration{endpoint:search}: avg=N/Ams, p95=N/Ams
+checks: 0.00%
+iteration_duration: avg=2217.82ms, p95=2806.92ms
+claims_crud_duration: avg=N/Ams, p95=N/Ams
+http_req_failed: 0.00%
+auth_flow_duration: avg=N/Ams, p95=N/Ams
+search_duration: avg=N/Ams, p95=N/Ams
+http_req_duration: avg=196.36ms, p95=237.42ms
+http_req_duration{endpoint:file_upload}: avg=N/Ams, p95=N/Ams
+http_req_tls_handshaking: avg=N/Ams, p95=N/Ams
+http_req_blocked: avg=0.22ms, p95=1.00ms
+file_upload_duration: avg=N/Ams, p95=N/Ams
+mfa_duration: avg=N/Ams, p95=N/Ams
+dashboard_duration: avg=N/Ams, p95=N/Ams
+http_req_connecting: avg=0.10ms, p95=0.46ms
+http_req_duration{endpoint:auth}: avg=N/Ams, p95=N/Ams
+dashboard_load_duration: avg=N/Ams, p95=N/Ams
+http_req_duration{expected_response:true}: avg=196.36ms, p95=237.42ms
+endpoint_errors: 0.00%
+http_req_duration{endpoint:claims_list}: avg=N/Ams, p95=N/Ams
+http_req_waiting: avg=196.04ms, p95=237.08ms
+http_req_receiving: avg=0.26ms, p95=0.36ms
+claim_creation_duration: avg=N/Ams, p95=N/Ams
+http_req_sending: avg=0.07ms, p95=0.13ms
