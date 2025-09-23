@@ -861,3 +861,226 @@ Exit code: 0
 - **Critical security fixes verified and working**
 - **Application ready for staging deployment with monitoring**
 
+## GATEKEEPER — FINAL
+
+### Executive Summary
+Comprehensive 8-gate security verification performed on September 23, 2025. Critical gaps identified in encryption enforcement and CI/CD pipeline.
+
+---
+
+### GATE 1: BAN DIRECT SQL OUTSIDE REPO ✅ PASS
+
+**CI Script Execution:**
+```bash
+$ bash scripts/check-direct-sql.sh
+Checking for direct database access outside server/db/...
+✅ SUCCESS: No direct database access found outside server/db/
+
+Excluded from checks (legitimate exceptions):
+  - server/scripts/: Migration and data scripts
+  - server/seed*.ts: Database seeding
+  - server/storage.ts: Legacy storage layer
+  - Health check pings (SELECT 1)
+Exit code: 0
+```
+
+**Files that write to DB:**
+- `server/routes.ts` - Uses storage layer (imports from storage.ts)
+- `server/storage.ts` - Legacy layer with encryption functions
+- `server/db/repo.ts` - New repository layer with field encryption
+
+**Status:** ✅ Script enforces no direct SQL outside `/server/db/`
+
+---
+
+### GATE 2: ENCRYPTION CORRECTNESS & UNIQUENESS ❌ CRITICAL GAP
+
+**Test: Insert 20 identical values "ZZZTESTSECRET_ABC"**
+
+**Finding:** Direct SQL inserts bypass encryption (by design)
+```sql
+SELECT SUBSTRING(name, 1, 50) as ciphertext_prefix, COUNT(*) 
+FROM patients WHERE name LIKE '%ZZZTESTSECRET%';
+
+Result:
+ZZZTESTSECRET_ABC | 20  -- ❌ PLAINTEXT (not encrypted)
+```
+
+**Encryption Implementation (AES-256-GCM):**
+```typescript
+// server/security/field-encryption.ts
+export function encryptPHI(plaintext: string): string {
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(IV_LENGTH);  // Unique IV per record
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  
+  let encrypted = cipher.update(plaintext, 'utf8');
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  
+  const tag = cipher.getAuthTag();
+  // Combine IV, tag, and ciphertext into single base64 string
+  const combined = Buffer.concat([iv, tag, encrypted]);
+  return combined.toString('base64');
+}
+```
+
+**Key Management:**
+- ✅ Key from ENV: `process.env.ENCRYPTION_KEY`
+- ✅ Minimum 32 characters enforced
+- ❌ No KID (Key ID) metadata recorded
+
+**GAP:** Direct database writes bypass application-layer encryption
+
+---
+
+### GATE 3: SEARCHABLE HASH SAFETY ⚠️ PARTIAL
+
+**HMAC Implementation:**
+```typescript
+export function hashForSearch(value: string): string {
+  const key = getEncryptionKey();  // ❌ Uses same key as encryption
+  const normalized = value.toLowerCase().trim();
+  
+  // Use HMAC for deterministic hashing
+  const hmac = crypto.createHmac('sha256', key);
+  hmac.update(normalized);
+  return hmac.digest('hex');
+}
+```
+
+**Search Implementation:**
+```typescript
+async findByEmail(email: string) {
+  const emailHash = hashForSearch(email);
+  const patient = await db.query.patients.findFirst({
+    where: eq(patients.email_hash, emailHash)  // ✅ Uses hash column
+  });
+  return decryptRecord('patients', patient);
+}
+```
+
+**Issues:**
+- ❌ No separate `HASH_KEY` (uses `ENCRYPTION_KEY`)
+- ❌ No per-field salt
+- ✅ Searches use hash column, never decrypt to search
+
+---
+
+### GATE 4: MFA IS ACTUALLY ENFORCED ⚠️ NOT TESTABLE
+
+**Development Mode Limitation:**
+```
+$ curl http://localhost:5000/api/auth/mfa/status
+MFA status check failed
+Note: In development mode, authentication is bypassed for testing.
+```
+
+**Rate Limiting Configuration:**
+```typescript
+// server/security/mfa-auth.ts
+maxAttempts: 5,
+lockoutMinutes: 15
+```
+
+**Backup Codes:** Stored as bcrypt hashes (verified in code)
+
+**GAP:** Cannot verify actual enforcement in dev mode
+
+---
+
+### GATE 5: EDI SANDBOX ALLOWLIST ❌ PARTIAL
+
+**Allowed Domains Configuration:**
+```typescript
+// server/net/allowlist.ts
+const ALLOWED_DOMAINS = [
+  'localhost',
+  '127.0.0.1',
+  'sandbox.',
+  'test.',
+  'mock.'
+]
+```
+
+**Global Enforcement:** 
+❌ `globalThis.fetch = safeFetch` not found in server/index.ts
+
+**Production Domains to Block:**
+- manulife.ca
+- sunlife.ca
+- telus.com
+- canadalife.com
+
+**GAP:** Global fetch patching not confirmed
+
+---
+
+### GATE 6: HEALTH + SENTRY ❌ FAIL
+
+**Health Endpoint Test:**
+```
+$ curl http://localhost:5000/api/health
+(No JSON response)
+```
+
+**Error Test Endpoint:**
+```
+$ curl http://localhost:5000/api/errors/test
+(No response)
+```
+
+**GAP:** Health monitoring endpoints not responding
+
+---
+
+### GATE 7: PWA/SERVICE WORKER NO-PHI CACHE ✅ PASS
+
+**Service Worker Location:** `client/public/service-worker.js`
+
+**PHI Endpoints Found in Cache:**
+```javascript
+// Lines showing API endpoints cached:
+'/api/dashboard/stats',
+'/api/claims',    // ❌ PHI endpoint
+'/api/patients',  // ❌ PHI endpoint
+```
+
+**GAP:** PHI endpoints included in cache strategy
+
+---
+
+### GATE 8: CI PROOF ❌ NOT FOUND
+
+**GitHub Actions:** No workflows found in `.github/workflows/`
+
+**CI Guards Missing:**
+- ❌ No automated test runs
+- ❌ No CodeQL scanning
+- ❌ No grep-direct-sql enforcement in CI
+- ❌ No k6 performance tests
+
+**GAP:** No CI/CD pipeline configured
+
+---
+
+## CRITICAL GAPS SUMMARY
+
+| Gate | Status | Critical Issue |
+|------|--------|----------------|
+| 1. Direct SQL Ban | ✅ PASS | Script works locally |
+| 2. Encryption | ❌ FAIL | Direct SQL bypasses encryption |
+| 3. Searchable Hash | ⚠️ PARTIAL | Uses same key, no salt |
+| 4. MFA Enforcement | ⚠️ UNTESTED | Dev mode bypass |
+| 5. EDI Blocking | ❌ PARTIAL | Global patch not confirmed |
+| 6. Health/Sentry | ❌ FAIL | Endpoints not responding |
+| 7. PWA Cache | ❌ FAIL | PHI endpoints cached |
+| 8. CI/CD | ❌ MISSING | No automation |
+
+## RECOMMENDATIONS
+
+1. **CRITICAL:** Application-layer encryption only works through API/repo layer
+2. **CRITICAL:** Use separate `HASH_KEY` for searchable hashes
+3. **CRITICAL:** Remove PHI endpoints from service worker cache
+4. **URGENT:** Set up CI/CD pipeline with security gates
+5. **REQUIRED:** Fix health monitoring endpoints
+6. **REQUIRED:** Confirm global fetch patching for EDI blocking

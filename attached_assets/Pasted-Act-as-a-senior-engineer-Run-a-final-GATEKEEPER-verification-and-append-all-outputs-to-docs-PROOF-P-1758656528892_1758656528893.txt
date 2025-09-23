@@ -1,0 +1,42 @@
+Act as a senior engineer. Run a final GATEKEEPER verification and append all outputs to docs/PROOF_PACK.md under “GATEKEEPER — FINAL”.
+
+1) Ban direct SQL outside repo
+- Add/confirm CI step runs `scripts/grep-direct-sql.sh` and fails on `pool.query|db.query` outside `/server/db/`.
+- Execute the script now and paste its output.
+- Print a list of files that write to DB and show they all import from `/server/db/repo`.
+
+2) Encryption correctness & uniqueness
+- Insert 20 patients via API with the SAME name value: "ZZZTESTSECRET_ABC".
+- Query the raw DB column(s) directly and show:
+  - No plaintext visible.
+  - All 20 ciphertext blobs are DIFFERENT (unique IV per row).
+- Show the encrypt/decrypt code snippet used (AES-256-GCM), where IV is generated, where tag is stored, and how KID metadata is recorded.
+- Prove key comes from ENV (ENCRYPTION_KEY) or KMS and is not in repo.
+
+3) Searchable hash safety
+- Show code for the “searchable hash” columns: use HMAC-SHA256 with a separate env key `HASH_KEY` (not ENCRYPTION_KEY), constant-time compare, and a per-field salt if implemented.
+- Prove equality searches use ONLY the HMAC column and never decrypt to search.
+
+4) MFA is actually enforced
+- Create temp admin, try password-only login → must return `mfaRequired:true`.
+- Complete TOTP challenge → success.
+- Show that backup codes are hashed at rest and that rate-limit is active (5 tries/15m).
+
+5) EDI sandbox allowlist
+- Print OUTBOUND_ALLOWLIST and show the wrapper is used for ALL outbound HTTP (grep for native fetch/axios and show they’re replaced).
+- Attempt call to `https://www.manulife.ca/` (or other prod insurer) → must BLOCK with SANDBOX error.
+- Call sandbox/mock endpoint → returns `SANDBOX-…`.
+
+6) Health + Sentry
+- Show `/healthz` JSON with version, uptimeSec, and db.latencyMs < 1000.
+- Trigger backend+frontend test errors and paste Sentry event IDs (with DSN set).
+
+7) PWA/service worker no-PHI cache
+- List service worker routes and confirm `/api/*` and any PHI endpoints are excluded from caching.
+- Paste Lighthouse PWA check summary.
+
+8) CI proof
+- Paste the latest CI run URLs showing: tests, CodeQL, grep-direct-sql guard, and k6 workflow success.
+- (Optional) Create a dummy commit that adds a forbidden `db.query` outside repo, push to a throwaway branch, and show CI FAILS; then revert.
+
+Finally, generate `FINAL_STAGING_READINESS_EVIDENCE.md` summarizing each gate with links to exact code lines, SQL outputs, CI runs, and Sentry event IDs. Mark anything not proven as “GAP”.
