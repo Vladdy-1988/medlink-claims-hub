@@ -30,6 +30,9 @@ export const sessions = pgTable(
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),
+  email_hash: varchar("email_hash"), // Hash for searchable encrypted email
+  phone: varchar("phone"),
+  phone_hash: varchar("phone_hash"), // Hash for searchable encrypted phone
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -80,6 +83,11 @@ export const patients = pgTable("patients", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: uuid("org_id").references(() => organizations.id).notNull(),
   name: varchar("name").notNull(),
+  email: varchar("email"),
+  email_hash: varchar("email_hash"), // Hash for searchable encrypted email
+  phone: varchar("phone"),
+  phone_hash: varchar("phone_hash"), // Hash for searchable encrypted phone
+  address: text("address"),
   dob: timestamp("dob"),
   identifiers: jsonb("identifiers"), // insurance numbers, etc.
   createdAt: timestamp("created_at").defaultNow(),
@@ -89,6 +97,10 @@ export const providers = pgTable("providers", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: uuid("org_id").references(() => organizations.id).notNull(),
   name: varchar("name").notNull(),
+  email: varchar("email"),
+  email_hash: varchar("email_hash"), // Hash for searchable encrypted email
+  phone: varchar("phone"),
+  phone_hash: varchar("phone_hash"), // Hash for searchable encrypted phone
   discipline: varchar("discipline"),
   licenceNumber: varchar("licence_number"),
   createdAt: timestamp("created_at").defaultNow(),

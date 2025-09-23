@@ -63,9 +63,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Health check routes (using enhanced health check functions)
   app.get('/health', healthCheck);
-  app.get('/api/health', healthCheck);
+  app.get('/api/health', async (req, res) => {
+    const startTime = Date.now();
+    let dbLatency = 0;
+    let dbOk = false;
+    
+    try {
+      // Measure database latency
+      const dbStart = Date.now();
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+      await db.execute(sql`SELECT 1`);
+      dbLatency = Date.now() - dbStart;
+      dbOk = true;
+    } catch (error) {
+      console.error('Database health check failed:', error);
+      dbOk = false;
+    }
+    
+    res.json({
+      status: dbOk ? 'ok' : 'degraded',
+      version: process.env.npm_package_version || '1.0.0',
+      uptimeSec: Math.floor(process.uptime()),
+      db: {
+        ok: dbOk,
+        latencyMs: dbLatency
+      },
+      timestamp: new Date().toISOString()
+    });
+  });
   app.get('/api/ready', readinessCheck);
   app.get('/api/metrics', metricsEndpoint);
+  
+  // Error test endpoint for Sentry
+  app.get('/api/errors/test', (req, res) => {
+    try {
+      // Throw a test error for Sentry
+      throw new Error('Test error for Sentry monitoring - this is intentional');
+    } catch (error) {
+      // Log to Sentry if available
+      if (process.env.SENTRY_DSN) {
+        const Sentry = require('@sentry/node');
+        Sentry.captureException(error, {
+          tags: { test: true, endpoint: '/api/errors/test' }
+        });
+      }
+      
+      res.status(500).json({
+        message: 'Test error thrown successfully',
+        error: (error as Error).message,
+        sentryEnabled: !!process.env.SENTRY_DSN
+      });
+    }
+  });
 
   // SKIP AUTH COMPLETELY IN DEVELOPMENT MODE
   if (process.env.NODE_ENV === 'development') {
@@ -627,6 +677,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error checking MFA status:", error);
       res.status(500).json({ message: "Failed to check MFA status" });
+    }
+  });
+  
+  // Enable MFA after verification
+  app.post('/api/auth/mfa/enable', devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const { code } = req.body;
+      const userId = req.user.claims.sub;
+      
+      // Import mfaAuth module
+      const { enableMFA, verifyTOTP } = await import('./security/mfa-auth');
+      
+      const success = await enableMFA(userId, code);
+      if (!success) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+      
+      await auditLog(req, 'mfa_enabled', { userId });
+      res.json({ message: "MFA enabled successfully" });
+    } catch (error) {
+      console.error("Error enabling MFA:", error);
+      res.status(500).json({ message: "Failed to enable MFA" });
+    }
+  });
+  
+  // MFA challenge endpoint (exchange TOTP + temp token for session)
+  app.post('/api/auth/mfa/challenge', authLimiter, async (req: any, res) => {
+    try {
+      const { tempToken, code } = req.body;
+      
+      // Import mfaAuth module
+      const { verifyTempToken, verifyTOTP } = await import('./security/mfa-auth');
+      
+      // Verify temp token
+      const { userId, valid } = verifyTempToken(tempToken);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+      }
+      
+      // Verify TOTP code
+      const verified = await verifyTOTP(userId, code);
+      if (!verified) {
+        return res.status(401).json({ message: "Invalid verification code" });
+      }
+      
+      // Create authenticated session
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Set session
+      req.session.userId = userId;
+      req.session.mfaVerified = true;
+      setMFAVerification(req.session);
+      
+      await auditLog(req, 'mfa_challenge_success', { userId });
+      
+      res.json({ 
+        message: "MFA verification successful",
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role
+        }
+      });
+    } catch (error) {
+      console.error("Error in MFA challenge:", error);
+      res.status(500).json({ message: "MFA challenge failed" });
     }
   });
 

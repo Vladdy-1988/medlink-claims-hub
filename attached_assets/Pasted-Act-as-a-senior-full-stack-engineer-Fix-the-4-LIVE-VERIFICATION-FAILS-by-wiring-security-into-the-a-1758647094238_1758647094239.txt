@@ -1,0 +1,74 @@
+Act as a senior full-stack engineer. Fix the 4 LIVE VERIFICATION FAILS by wiring security into the actual data/HTTP paths, prevent foot-guns, and re-run the proof. Work on branch `remediation/live-fix`, then open a PR.
+
+GOAL
+- Encryption is enforced for ALL PHI writes/reads.
+- Admin MFA actually required and verified.
+- EDI production endpoints cannot be reached from staging.
+- Health monitoring is alive and verifiable.
+- Add CI guards so these regressions can’t happen again.
+
+1) FIELD-LEVEL ENCRYPTION — ENFORCE EVERYWHERE
+A. Create a single data access layer:
+   - `server/db/repo.ts` exporting repos (patients, claims, providers).
+   - All CREATE/UPDATE routes must call repo methods; NO direct `pool.query`/`db.query`.
+
+B. Wire encryption at the repo boundary:
+   - Add `server/security/encryption.ts` (if not present) using AES-256-GCM with unique IV per record; store `{iv,tag,ciphertext}` as JSON in PHI columns OR use separate columns (iv, tag, data).
+   - Sensitive fields (example): patient.name, patient.email, phone, address, notes, claim.notes, attachments.metadata.
+   - Keys from env: `ENCRYPTION_KEY` (do NOT hard-code). Consider key id `KID` metadata.
+
+C. Codemod + lint guard:
+   - Add ESLint rule: forbid `pool.query|db.query` outside `/server/db/`.
+   - Add a simple script `scripts/grep-direct-sql.sh` that fails CI if direct SQL is used outside repo.
+   - Run a codemod to replace direct calls with repo calls where possible; leave TODOs where not trivial.
+
+D. Tests:
+   - `tests/security/encryption.integration.test.ts`:
+     1) Insert record via API with marker `ZZZTESTSECRET_123`.
+     2) Raw SQL select proves the DB column is NOT plaintext.
+     3) API GET returns decrypted value.
+
+2) MFA — MAKE IT REAL
+A. Backend
+   - Routes:
+     - `POST /auth/mfa/setup` (returns TOTP secret + otpauth URL; secret is encrypted at rest).
+     - `POST /auth/mfa/verify` (verifies TOTP; sets `mfaEnabled=true`).
+     - `POST /auth/login` (password check). If user is admin with `mfaEnabled`, return `{mfaRequired:true, tempToken}` (short-lived).
+     - `POST /auth/mfa/challenge` (requires valid TOTP + tempToken → issues final session/JWT).
+   - Store backup codes hashed (bcrypt). Rate-limit MFA endpoints (5/15min).
+
+B. Frontend
+   - If `mfaRequired`, show MFA screen and call `/auth/mfa/challenge`.
+
+C. Tests
+   - E2E: login without TOTP fails for admin; login with valid TOTP succeeds.
+
+3) EDI BLOCKING — ENFORCE SANDBOX
+A. Create `server/net/allowlist.ts` fetch/axios wrapper:
+   - Env: `EDI_MODE=sandbox`, `OUTBOUND_ALLOWLIST=localhost,127.0.0.1,sandbox.,test.,mock.,cdn.,api-staging.,yourdomain.tld`.
+   - Block any outbound host not matching allowlist; throw `SANDBOX_BLOCKED` error. Prefix all EDI mock responses with `SANDBOX-`.
+
+B. Replace all outbound HTTP calls to use this wrapper; add unit test that a real insurer domain (e.g., `manulife.ca`) is blocked in sandbox.
+
+4) HEALTH MONITORING — MAKE IT REAL
+- `GET /healthz` returns `{status:'ok', version, uptimeSec, db:{ok:true, latencyMs}}`; actually ping DB.
+- Add `scripts/uptime.sh` curling `/healthz` and exiting non-zero on failure.
+- Ensure Sentry init uses env `SENTRY_DSN`; add `/errors/test` route that throws for a test event.
+
+5) CI GUARDS
+- `.github/workflows/ci.yml`: run lint, typecheck, tests AND `scripts/grep-direct-sql.sh`.
+- Fail PR if any direct SQL usage outside repo exists or if encryption integration test fails.
+
+6) RE-RUN LIVE VERIFICATION
+Append outputs to `docs/PROOF_PACK.md` → “LIVE VERIFICATION (FIX PASS)”:
+- Encryption: insert marker; raw SQL shows ciphertext; API shows decrypted.
+- MFA: admin login requires TOTP; success only with valid code.
+- EDI: real insurer blocked; sandbox endpoint returns `SANDBOX-...`.
+- Health: `/healthz` JSON with db latency; `uptime.sh` exit code 0.
+- Link CI run URL.
+
+ACCEPTANCE
+- All four tests PASS with pasted evidence.
+- CI blocks any direct SQL outside repo.
+- No PHI in logs (grep check included).
+- PR opened with summary of changes and links to PROOF_PACK anchors.

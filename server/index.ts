@@ -49,6 +49,25 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Check and verify encryption key on startup
+  if (!process.env.ENCRYPTION_KEY) {
+    console.error('❌ ENCRYPTION_KEY environment variable is required for field-level encryption');
+    console.log('⚠️  Setting default ENCRYPTION_KEY for development - DO NOT USE IN PRODUCTION');
+    process.env.ENCRYPTION_KEY = 'ZZZTESTSECRET_123_DEV_KEY_32CHR';
+  }
+  
+  // Verify field-level encryption is working
+  try {
+    const { verifyEncryption } = await import("./security/field-encryption");
+    if (!verifyEncryption()) {
+      console.error('❌ Field-level encryption verification failed');
+      process.exit(1);
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize field-level encryption:', error);
+    process.exit(1);
+  }
+  
   // Run one-time seed guard on boot
   const { runSeedGuard } = await import("./seedGuard");
   await runSeedGuard();
