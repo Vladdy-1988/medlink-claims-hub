@@ -1,0 +1,45 @@
+Act as a senior engineer. Produce a PROOF PACK that demonstrates the features you said you implemented. Do not summarize; SHOW FILES, DIFFS, COMMANDS, and OUTPUT. Create/append to `docs/PROOF_PACK.md` with sections:
+
+A) FIELD-LEVEL ENCRYPTION (AES-256-GCM)
+- List file paths you added/modified (encryption util, model/hooks, middleware).
+- Show the exact encrypt/decrypt code (redact keys), confirm unique IV per record and authenticated tag handling; note AAD if used.
+- Show where the key comes from (ENV/KMS) and the env var names. Prove keys are NOT in repo.
+- If you store key id (KID) metadata, show where.
+
+B) DB EVIDENCE (NO plaintext)
+- Create a test record with a PHI string marker: `ZZZTESTSECRET_123`.
+- Show the raw DB row via SQL (not app) proving the column is ciphertext (no readable `ZZZTESTSECRET_123`).
+- Show the app successfully decrypting that same record.
+
+C) MFA FOR ADMINS
+- List changed files (routes/controllers/views).
+- Show the data model for TOTP secret storage (hashed/encrypted), backup codes (hashed), and rate-limit config.
+- Run an end-to-end admin login in a local test and show the server logs (scrub secrets) demonstrating the second factor is required.
+
+D) EDI SANDBOX / BLOCK REAL ENDPOINTS
+- Show the env toggle: `EDI_MODE=sandbox`.
+- Show the outbound allowlist/denylist code. Include one test call to a REAL insurer domain and prove it’s blocked with a SANDBOX error.
+- Show the mock endpoints and an example SANDBOX response (prefix `SANDBOX-`).
+
+E) DATA ANONYMIZATION PIPELINE
+- List files (generator, mappers).
+- Show the mapping table: source PHI field → anonymized synthetic.
+- Run the generator and show 3 example anonymized records.
+
+F) LOAD TESTS (k6)
+- Show the scripts in `tests/load/`. Run `k6` (smoke) against local and paste the p95 latency & error rate.
+- Save the results JSON to `tests/load/results/last_run.json`.
+
+G) AUDIT LOGGING
+- Show where PHI-touching routes emit structured audit events (no PHI content). Paste one sample JSON line.
+- Run the CSV export script and paste the first 5 lines.
+
+H) BACKUPS/RESTORE DRILL (STAGING)
+- Show the GitHub Actions workflow files for nightly backup and manual restore test.
+- Trigger the restore test (workflow_dispatch) and paste the log excerpt proving a fresh DB was restored and a smoke query passed.
+
+I) MONITORING
+- Show Sentry init in backend and frontend guarded by env. Trigger a test error and paste the “event id” printed to logs.
+- Show `/healthz` output and `scripts/uptime.sh` exit codes.
+
+At the end of PROOF_PACK.md, add a checklist mapping each claim to a file/command/output link within the repo.
