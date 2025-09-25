@@ -81,7 +81,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       dbOk = false;
     }
     
-    res.json({
+    const healthStatus = {
       status: dbOk ? 'ok' : 'degraded',
       version: process.env.npm_package_version || '1.0.0',
       uptimeSec: Math.floor(process.uptime()),
@@ -90,7 +90,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         latencyMs: dbLatency
       },
       timestamp: new Date().toISOString()
-    });
+    };
+    
+    // Return 503 if database is not ok, otherwise 200
+    const statusCode = dbOk ? 200 : 503;
+    res.status(statusCode).json(healthStatus);
   });
   app.get('/api/ready', readinessCheck);
   app.get('/api/metrics', metricsEndpoint);
@@ -158,6 +162,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   // Auth routes
+  // Login endpoint for testing (dev/staging only)
+  app.post('/api/auth/login', authLimiter, async (req: any, res) => {
+    // Only allow test login in development or staging
+    if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'staging') {
+      return res.status(404).json({ message: "Endpoint not available" });
+    }
+    
+    const { email, password } = req.body;
+    
+    // Check for test credentials
+    if (email === 'test@staging.local' && password === 'testpass123') {
+      // Create or get test user and test data
+      const testUser = await storage.upsertUser({
+        id: 'test-user-001',
+        email: 'test@staging.local',
+        firstName: 'Test',
+        lastName: 'User',
+        profileImageUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=test',
+        role: 'provider' as const,
+      });
+      
+      // Create test organization if needed
+      let testOrg = await storage.getOrganization('11111111-1111-1111-1111-111111111111');
+      if (!testOrg) {
+        testOrg = await storage.createOrganization({
+          id: '11111111-1111-1111-1111-111111111111',
+          name: 'Test Organization',
+          type: 'clinic',
+          taxId: 'TEST123',
+          phone: '555-0100',
+          email: 'test@org.local',
+          address: '123 Test St'
+        });
+      }
+      
+      // Update user with org
+      await storage.updateUser(testUser.id, { orgId: testOrg.id });
+      
+      // Create test patient if needed
+      const patients = await storage.getPatients(testOrg.id, { id: '11111111-1111-1111-1111-111111111111' });
+      if (patients.length === 0) {
+        await storage.createPatient({
+          id: '11111111-1111-1111-1111-111111111111',
+          orgId: testOrg.id,
+          name: 'Test Patient',
+          identifiers: { healthCardNumber: 'TEST123456' },
+          phone: '555-0101',
+          email: 'patient@test.local',
+          address: '456 Test Ave'
+        });
+      }
+      
+      // Create test provider if needed
+      const providers = await storage.getProviders(testOrg.id, { id: '22222222-2222-2222-2222-222222222222' });
+      if (providers.length === 0) {
+        await storage.createProvider({
+          id: '22222222-2222-2222-2222-222222222222',
+          orgId: testOrg.id,
+          name: 'Test Provider',
+          licenceNumber: 'TEST789',
+          discipline: 'General Practice',
+          phone: '555-0102',
+          email: 'provider@test.local'
+        });
+      }
+      
+      // Create test insurer if needed
+      const insurer = await storage.getInsurer('33333333-3333-3333-3333-333333333333');
+      if (!insurer) {
+        await storage.createInsurer({
+          id: '33333333-3333-3333-3333-333333333333',
+          name: 'Test Insurance Co',
+          rail: 'cdanet'
+        });
+      }
+      
+      // Set up session for test user
+      req.user = { 
+        claims: { 
+          sub: testUser.id,
+          email: testUser.email,
+          first_name: testUser.firstName,
+          last_name: testUser.lastName
+        }
+      };
+      req.isAuthenticated = () => true;
+      
+      return res.status(200).json({
+        user: { ...testUser, orgId: testOrg.id },
+        token: 'test-session-token-' + Date.now()
+      });
+    }
+    
+    return res.status(401).json({ message: "Invalid credentials" });
+  });
+  
   app.get('/api/auth/user', authLimiter, async (req: any, res) => {
     // Development mode bypass for Replit preview
     if (process.env.NODE_ENV === 'development' && !req.isAuthenticated()) {

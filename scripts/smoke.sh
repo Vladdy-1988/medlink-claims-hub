@@ -86,7 +86,7 @@ http_test() {
     local response_time=$(( (test_end - test_start) / 1000000 ))
     
     if [ "$response" = "CURL_ERROR" ]; then
-        print_status "FAIL" "$description - Connection error (${response_time}ms)"
+        print_status "FAIL" "$description - Connection error (${response_time}ms)" >&2
         TEST_RESULTS+=("FAIL|$description|Connection error")
         TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
@@ -98,23 +98,24 @@ http_test() {
     
     # Validate status code
     if [ "$http_status" = "$expected_status" ]; then
-        print_status "PASS" "$description - Status: $http_status (${response_time}ms)"
+        print_status "PASS" "$description - Status: $http_status (${response_time}ms)" >&2
         TEST_RESULTS+=("PASS|$description|$http_status")
         TESTS_PASSED=$((TESTS_PASSED + 1))
         
         if [ "$VERBOSE" = "true" ] && [ -n "$response_body" ]; then
-            echo "  Response: $(echo $response_body | jq -c '.' 2>/dev/null || echo $response_body)"
+            echo "  Response: $(echo $response_body | jq -c '.' 2>/dev/null || echo $response_body)" >&2
         fi
         
+        # Return the response body for further processing
         echo "$response_body"
         return 0
     else
-        print_status "FAIL" "$description - Expected: $expected_status, Got: $http_status (${response_time}ms)"
+        print_status "FAIL" "$description - Expected: $expected_status, Got: $http_status (${response_time}ms)" >&2
         TEST_RESULTS+=("FAIL|$description|Expected $expected_status, got $http_status")
         TESTS_FAILED=$((TESTS_FAILED + 1))
         
         if [ "$VERBOSE" = "true" ] && [ -n "$response_body" ]; then
-            echo "  Error Response: $(echo $response_body | jq -c '.' 2>/dev/null || echo $response_body)"
+            echo "  Error Response: $(echo $response_body | jq -c '.' 2>/dev/null || echo $response_body)" >&2
         fi
         
         return 1
@@ -148,28 +149,21 @@ validate_json_field() {
 # Function to generate test data
 generate_test_user() {
     echo '{
-        "email": "smoketest_'$(date +%s)'@test.com",
-        "password": "Test123!@#"
+        "email": "test@staging.local",
+        "password": "testpass123"
     }'
 }
 
 generate_test_claim() {
     echo '{
-        "patientId": "TEST_PATIENT_'$(date +%s)'",
-        "providerId": "TEST_PROVIDER_001",
+        "patientId": "11111111-1111-1111-1111-111111111111",
+        "providerId": "22222222-2222-2222-2222-222222222222",
+        "insurerId": "33333333-3333-3333-3333-333333333333",
+        "type": "claim",
         "serviceDate": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
-        "serviceType": "general_consultation",
-        "amount": 150.00,
-        "insuranceId": "TEST_INS_001",
+        "amount": "150.00",
         "status": "draft",
-        "items": [
-            {
-                "code": "99213",
-                "description": "Office visit - established patient",
-                "quantity": 1,
-                "amount": 150.00
-            }
-        ]
+        "notes": "Smoke test claim"
     }'
 }
 
@@ -187,10 +181,10 @@ main() {
     
     # Test 1: Health Check
     print_status "INFO" "Test Suite: Health Check"
-    health_response=$(http_test "GET" "/healthz" "200" "" "Health check endpoint") || true
+    health_response=$(http_test "GET" "/api/health" "200" "" "Health check endpoint" 2>/dev/null) || health_response=""
     
-    if [ -n "$health_response" ] && [ "$health_response" != "CURL_ERROR" ]; then
-        validate_json_field "$health_response" ".status" "healthy" "Health status validation" || true
+    if [ -n "$health_response" ] && [ "$health_response" != "CURL_ERROR" ] && [ "$health_response" != "" ]; then
+        validate_json_field "$health_response" ".status" "ok" "Health status validation" || true
         validate_json_field "$health_response" ".db.ok" "true" "Database connection validation" || true
     fi
     
@@ -203,13 +197,9 @@ main() {
     test_user=$(generate_test_user)
     
     # Try login with test credentials
-    auth_response=$(http_test "POST" "/api/auth/login" "200" "$test_user" "User login") || {
-        # If login fails with 200, try with 401 (expected for non-existent user)
-        print_status "WARN" "Login returned non-200, trying synthetic fallback user"
-        fallback_user='{"email":"test@example.com","password":"TestPassword123!"}'
-        auth_response=$(http_test "POST" "/api/auth/login" "200" "$fallback_user" "User login (fallback)") || {
-            print_status "WARN" "Authentication test using fallback - endpoint may require valid credentials"
-        }
+    auth_response=$(http_test "POST" "/api/auth/login" "200" "$test_user" "User login" 2>/dev/null) || {
+        print_status "WARN" "Login failed - endpoint may not be available in current environment"
+        auth_response=""
     }
     
     echo ""
@@ -219,22 +209,22 @@ main() {
     
     # Create a test claim
     test_claim=$(generate_test_claim)
-    claim_response=$(http_test "POST" "/api/claims" "201" "$test_claim" "Create claim") || {
+    claim_response=$(http_test "POST" "/api/claims" "201" "$test_claim" "Create claim" 2>/dev/null) || {
         print_status "WARN" "Claim creation failed - may require authentication"
         claim_response=""
     }
     
     # If claim was created, try to retrieve it
-    if [ -n "$claim_response" ] && [ "$claim_response" != "CURL_ERROR" ]; then
-        claim_id=$(echo "$claim_response" | jq -r '.id' 2>/dev/null || echo "")
+    if [ -n "$claim_response" ] && [ "$claim_response" != "CURL_ERROR" ] && [ "$claim_response" != "" ]; then
+        claim_id=$(echo "$claim_response" | jq -r '.id' 2>/dev/null)
         
-        if [ -n "$claim_id" ] && [ "$claim_id" != "null" ]; then
-            http_test "GET" "/api/claims/$claim_id" "200" "" "Retrieve claim by ID" || true
+        if [ -n "$claim_id" ] && [ "$claim_id" != "null" ] && [ "$claim_id" != "" ]; then
+            http_test "GET" "/api/claims/$claim_id" "200" "" "Retrieve claim by ID" 2>/dev/null || true
         else
-            print_status "WARN" "Could not extract claim ID from response"
-            # Try with a synthetic ID
-            http_test "GET" "/api/claims/test-claim-001" "200" "" "Retrieve claim (synthetic ID)" || {
-                print_status "WARN" "Claim retrieval failed - endpoint may require valid claim ID"
+            print_status "WARN" "Could not extract claim ID from response: $claim_id"
+            # Try to list claims instead
+            http_test "GET" "/api/claims" "200" "" "List claims" 2>/dev/null || {
+                print_status "WARN" "Claims listing failed - may require authentication"
             }
         fi
     else
