@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import cors from "cors";
+import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { safeFetch, testDomain } from "./net/allowlist";
@@ -359,6 +360,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         user: { ...testUser, orgId: testOrg.id },
         token: 'test-session-token-' + Date.now()
       });
+    }
+    
+    // Check for real database users with password authentication
+    try {
+      const user = await storage.getUserByEmail(email);
+      if (user && user.passwordHash) {
+        // Verify password using bcrypt
+        const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+        if (isValidPassword) {
+          // For non-admin users, skip MFA requirement
+          if (user.role !== 'admin' || !user.mfaEnabled) {
+            // Set up session for authenticated user
+            req.user = {
+              claims: {
+                sub: user.id,
+                email: user.email,
+                first_name: user.firstName,
+                last_name: user.lastName
+              }
+            };
+            req.isAuthenticated = () => true;
+            
+            // Return success response with token
+            return res.status(200).json({
+              token: 'bearer-' + user.id + '-' + Date.now(),
+              user: {
+                id: user.id,
+                role: user.role
+              }
+            });
+          } else {
+            // Admin users with MFA enabled need additional verification
+            return res.status(403).json({ 
+              message: "MFA verification required",
+              requiresMFA: true,
+              userId: user.id
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error during password authentication:", error);
     }
     
     return res.status(401).json({ message: "Invalid credentials" });

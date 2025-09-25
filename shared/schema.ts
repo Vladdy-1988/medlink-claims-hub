@@ -40,6 +40,7 @@ export const users = pgTable("users", {
   orgId: uuid("org_id").references(() => organizations.id),
   notificationsEnabled: boolean("notifications_enabled").default(false),
   preferredLanguage: varchar("preferred_language", { length: 5 }), // User's preferred language (overrides org default)
+  passwordHash: varchar("password_hash"), // Optional password hash for staging/test environments
   // MFA fields
   mfaSecret: text("mfa_secret"), // Will be encrypted by storage layer
   mfaEnabled: boolean("mfa_enabled").default(false),
