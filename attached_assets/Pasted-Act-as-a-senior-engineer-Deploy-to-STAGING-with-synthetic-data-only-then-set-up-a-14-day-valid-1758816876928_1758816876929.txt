@@ -1,0 +1,80 @@
+Act as a senior engineer. Deploy to STAGING with **synthetic data only**, then set up a 14-day validation loop. Create evidence docs and CI jobs. Work on branch `staging/rollout`, open a PR.
+
+GOALS
+- Deploy staging safely (HTTPS, sandbox EDI, no PHI).
+- Day-0 verification (health, logs clean, encryption works).
+- Nightly validations (load, security, backups) for 14 days.
+- One-stop evidence report.
+
+REQUIRED SECRETS (staging)
+- DATABASE_URL (staging Postgres, NON-PHI)
+- ENCRYPTION_KEY (32 bytes)
+- HASH_KEY (32 bytes, DIFFERENT)
+- JWT_SECRET (32+ chars)
+- SENTRY_DSN (optional), SENTRY_ENV=staging
+- EDI_MODE=sandbox
+- OUTBOUND_ALLOWLIST=localhost,127.0.0.1,sandbox.,test.,mock.,cdn.,api-staging.
+
+1) STAGING CONFIG
+- Create `config/staging.env.example` listing all required env keys (no values).
+- Ensure service worker excludes `/api/**` from caching (already done).
+- Force HTTPS, HSTS on, secure/httponly/samesite cookies.
+
+2) DEPLOY
+- Build & start staging. Print the public STAGING_BASE_URL.
+- Add `docs/staging/STAGING_RUNBOOK.md` (deploy, rollback, feature flags).
+- Add `scripts/smoke.sh` that hits:
+  - `GET /healthz` → expect JSON with `db.ok=true`
+  - `POST /api/auth/login` (non-admin) → expect 200
+  - `POST /api/claims` (synthetic) → expect 201
+  - `GET /api/claims/:id` → expect 200
+- Run `scripts/smoke.sh` against STAGING_BASE_URL and append output to `docs/staging/DAY0_REPORT.md`.
+
+3) DAY-0 EVIDENCE
+Append to `docs/staging/DAY0_REPORT.md`:
+- `/healthz` JSON + latency
+- Grep staging logs proving **no PHI patterns** (emails/phones/health #) → show zero matches
+- “Encryption uniqueness” check: create 5 patients named `ZZZSTAGE_A`; raw DB shows 5 different ciphertexts
+- EDI sandbox proof: attempt call to known prod insurer → BLOCKED; sandbox endpoint → `SANDBOX-...`
+
+4) NIGHTLY VALIDATIONS (CI)
+Create these GitHub Actions (UTC cron noted in file):
+- `.github/workflows/nightly-k6.yml` (daily 03:30 UTC)
+  - Run k6 smoke vs `${{ secrets.STAGING_BASE_URL }}`
+  - Save p95 latency + error rate; upload artifact
+- `.github/workflows/nightly-zap.yml` (daily 04:00 UTC)
+  - OWASP ZAP baseline scan vs STAGING_BASE_URL (no auth)
+  - Fail on High/Critical; upload HTML report
+- `.github/workflows/nightly-backup-restore.yml` (daily 04:30 UTC)
+  - Run staging backup then restore to temp DB; run smoke query
+  - Output measured RPO/RTO
+- `.github/workflows/guards.yml` (on PR)
+  - Lint, typecheck, tests
+  - CodeQL
+  - `scripts/grep-direct-sql.sh` guard
+  - Fail if service worker caches `/api/**` (grep)
+
+Add `docs/staging/VALIDATION_PLAN.md` explaining cron times (UTC), SLOs (p95 < 400ms, error < 1%), and pass/fail gates.
+
+5) DAILY APPEND REPORT
+Create `scripts/append_daily_report.sh` that:
+- Appends previous night’s k6 p95 + error%, ZAP summary (counts by severity), and backup/restore RPO/RTO to `docs/staging/DAILY_REPORT.md` under a dated header.
+- Commit the updated report (skip CI on this commit).
+
+6) FINAL READINESS CHECKLIST
+Generate `FINAL_STAGING_READINESS.md` listing:
+- Links to DAY0_REPORT.md, DAILY_REPORT.md, latest ZAP & k6 artifacts, backup/restore run
+- Green checks for: encryption enforced (DB JSONB), HASH_KEY separation, health OK, no PHI in cache/logs, EDI sandbox enforced, CI guards on
+- A “GAPS” section (empty if none) and a “Rollback plan” section referencing STAGING_RUNBOOK.md
+
+ACCEPTANCE
+- STAGING_BASE_URL printed and reachable; `/healthz` JSON good.
+- DAY0_REPORT.md created with all proofs (no PHI in logs, encryption uniqueness, EDI block).
+- All 3 nightly workflows present and enabled; next runs scheduled.
+- DAILY_REPORT.md scaffold exists; script composes reports.
+- FINAL_STAGING_READINESS.md generated and committed.
+
+IMPORTANT
+- Use **synthetic data only**.
+- Do NOT claim HIPAA; focus on **PIPEDA + Alberta HIA**; mark docs as “draft”.
+- If any step fails, STOP and record FAIL with logs; do not claim readiness.
