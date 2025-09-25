@@ -1,0 +1,104 @@
+Act as a senior full-stack engineer. CLOSE the remaining Gatekeeper gaps with DB-level guarantees + CI guards, then re-run Gatekeeper and append outputs to docs/PROOF_PACK.md under “GATEKEEPER — FIX PASS”. Work on branch `remediation/gatekeeper-fixes` and open a PR.
+
+GOALS
+- No way to store PHI as plaintext (even via raw SQL).
+- Health endpoint returns real JSON + DB latency.
+- Service worker never caches PHI endpoints.
+- CI/CD present and blocking on security rules.
+- EDI outbound blocking globally enforced.
+- Searchable hash uses a distinct key (HASH_KEY).
+
+ENV (ensure present in .env/.replit secrets)
+- ENCRYPTION_KEY=<32 bytes>
+- HASH_KEY=<32 bytes>  (MUST be different from ENCRYPTION_KEY)
+- EDI_MODE=sandbox
+- OUTBOUND_ALLOWLIST=localhost,127.0.0.1,sandbox.,test.,mock.,cdn.,api-staging.
+- SENTRY_DSN (optional), SENTRY_ENV=staging
+
+1) DB SCHEMA HARDENING — make plaintext impossible
+- For each PHI column (e.g., patients.name, patients.email, patients.phone, patients.address, patients.notes, claims.notes):
+  a) Migrate to a *_enc JSONB column that stores:
+     { "v":1, "iv":"<base64>", "tag":"<base64>", "ct":"<base64>", "kid":"v1" }
+  b) Add CHECK constraints to ensure required keys exist and are non-null:
+     CHECK ((_enc ? 'iv') AND (_enc ? 'tag') AND (_enc ? 'ct'))
+  c) If searchable equality is needed, add a generated column *_hmac TEXT and index it:
+     *_hmac TEXT GENERATED ALWAYS AS (encode(hmac_sha256(<salted value>), 'hex')) STORED
+     NOTE: Use a postgres function that reads a stable salt stored in a settings table; if no extension available, materialize via repo on write (document).
+- Create a migration that:
+  - Moves any existing plaintext to encrypted JSONB via the repo encryptor, OR refuses to proceed and logs rows needing manual treatment (OK for staging).
+- Permissions (optional): REVOKE direct INSERT/UPDATE on PHI columns from app role; allow only via views/functions if feasible.
+
+ACCEPTANCE:
+- Direct `INSERT ... name='ZZZTESTSECRET_ABC'` fails with type/constraint error OR results in encrypted JSONB (no plaintext visible).
+- Raw SQL `SELECT` shows JSONB envelope (no plaintext).
+- API read decrypts properly.
+
+2) REPO-ONLY WRITES + CI GUARD (defense-in-depth)
+- Ensure all CREATE/UPDATE routes call `/server/db/repo.ts` methods only.
+- ESLint rule + `scripts/grep-direct-sql.sh` to fail on `db.query|pool.query` outside `/server/db/`.
+- Add to CI so PRs fail if someone bypasses the repo.
+- (Optional runtime guard) Wrap exported `query()` with a stack check that logs an error if caller is outside `/server/db/`.
+
+3) HASH KEY SEPARATION
+- Implement HMAC-SHA256 using **HASH_KEY** (never ENCRYPTION_KEY).
+- Confirm equality search uses only HMAC columns and **never decrypts to search**.
+- Update docs/privacy/data-map.md to reflect HMAC search.
+
+4) HEALTH ENDPOINT JSON
+- `/healthz` returns JSON:
+  { "status":"ok", "version":"<git sha/semver>", "uptimeSec": <int>, "db": { "ok": true, "latencyMs": <int> } }
+- Add DB ping timing; failure sets db.ok=false and appropriate status code.
+- Add `scripts/uptime.sh` that exits non-zero if health fails.
+
+5) SERVICE WORKER — NO PHI CACHING
+- In vite-plugin-pwa (or Workbox) config:
+  - Exclude `/api/**` and any PHI endpoints from runtime caching (networkOnly).
+  - Ensure only static assets (css/js/fonts/images) are cached.
+  - Add denylist/navigateFallbackDenylist: [/^\/api\//].
+- Add a short docs/pwa-no-phi-cache.md explaining the policy.
+- Run Lighthouse; paste summary.
+
+6) EDI GLOBAL ENFORCEMENT
+- Ensure all outbound HTTP uses a single wrapper (`server/net/allowlist.ts`).
+- In sandbox mode, block non-allowlisted hosts. Throw `SANDBOX_BLOCKED`.
+- Grep the repo for `fetch(` and `axios.` not using the wrapper; fail CI if found.
+- Add a unit test that calls a real insurer domain (e.g., manulife.ca) and asserts BLOCKED in sandbox.
+
+7) CI/CD SETUP
+- `.github/workflows/ci.yml`:
+  - Node setup → `npm ci` → `npm run lint` → `npm run typecheck` → tests
+  - Run `scripts/grep-direct-sql.sh`
+- Add GitHub CodeQL workflow for JS/TS.
+- (Optional) Add workflow_dispatch for k6 smoke with BASE_URL input.
+
+8) RE-RUN GATEKEEPER & APPEND EVIDENCE
+Append terminal outputs to PROOF_PACK.md → “GATEKEEPER — FIX PASS”:
+
+A) DB hardening proof:
+- Attempt raw SQL inserts with plaintext in PHI columns:
+  - Expect fail (constraint) OR stored JSONB envelope. Paste SQL + result.
+- Insert 20 identical names via API; show raw DB reveals 20 distinct ciphertexts (unique IV).
+
+B) HASH separation:
+- Paste code snippet showing HMAC uses HASH_KEY and decrypt is not used for search.
+
+C) Health:
+- Paste `/healthz` JSON + `scripts/uptime.sh` exit 0.
+
+D) SW cache safety:
+- Paste service worker config showing `/api/**` excluded, and Lighthouse summary.
+
+E) EDI:
+- Show allowlist in effect; attempt call to prod insurer → BLOCKED; call sandbox → SANDBOX- response.
+
+F) CI:
+- Paste latest CI run URLs (tests + grep guard + CodeQL). Prove a synthetic violation (temp branch adding `db.query` outside repo) fails CI; then revert.
+
+ACCEPTANCE (must meet all):
+- No plaintext PHI possible via direct SQL.
+- HMAC search uses separate HASH_KEY.
+- `/healthz` returns valid JSON with DB latency.
+- Service worker does NOT cache any `/api/**` response.
+- EDI sandbox blocking proven with real host attempt.
+- CI present and fails on direct SQL bypass or missing tests.
+- Evidence appended to PROOF_PACK.md and FINAL_STAGING_READINESS_EVIDENCE updated.
