@@ -1,0 +1,89 @@
+name: Deployment Readiness Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'shared/**'
+      - 'package*.json'
+
+jobs:
+  readiness-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run type checking
+      run: npx tsc --noEmit
+      
+    - name: Check database layer security
+      run: |
+        chmod +x scripts/check-direct-sql.sh
+        ./scripts/check-direct-sql.sh
+    
+    - name: Build application
+      run: npm run build
+      env:
+        NODE_ENV: production
+    
+    - name: Start server for health check
+      run: |
+        npm run start &
+        SERVER_PID=$!
+        echo "Server PID: $SERVER_PID"
+        
+        # Wait for server to start
+        echo "Waiting for server to start..."
+        sleep 10
+        
+        # Run health check
+        chmod +x scripts/uptime.sh
+        if ./scripts/uptime.sh; then
+          echo "Health check passed!"
+          kill $SERVER_PID || true
+          exit 0
+        else
+          echo "Health check failed!"
+          kill $SERVER_PID || true
+          exit 1
+        fi
+      env:
+        NODE_ENV: production
+        DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://test:test@localhost:5432/test' }}
+      timeout-minutes: 2
+      
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+        
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
