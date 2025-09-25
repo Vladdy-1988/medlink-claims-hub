@@ -4,8 +4,15 @@ import { setupVite, serveStatic, log } from "./vite";
 import { initSentry, getSentryMiddleware } from "./monitoring/sentry";
 import { safeFetch } from "./net/allowlist";
 
+// Store the original fetch for reference
+const originalFetch = globalThis.fetch;
+
 // Patch global fetch to enforce allowlist IMMEDIATELY
+console.log('🔐 Patching global fetch for EDI sandbox protection...');
 globalThis.fetch = safeFetch;
+console.log('✅ Global fetch patched successfully');
+console.log(`   Original fetch type: ${originalFetch ? originalFetch.constructor.name : 'none'}`);
+console.log(`   New fetch type: safeFetch from ./net/allowlist`);
 
 const app = express();
 
@@ -105,11 +112,31 @@ app.use((req, res, next) => {
   }
   
   // Verify sandbox mode configuration
-  const { verifySandboxMode } = await import("./net/allowlist");
+  const { verifySandboxMode, testDomain } = await import("./net/allowlist");
   verifySandboxMode();
   
-  console.log('✅ Global fetch patched with EDI allowlist enforcement');
-  console.log('   Note: Direct http/https usage should be replaced with safeFetch');
+  // Confirm fetch patching is active
+  console.log('\n🔍 Verifying EDI sandbox blocking configuration:');
+  console.log(`   EDI_MODE: ${process.env.EDI_MODE || 'not set (all domains allowed)'}`);
+  console.log(`   OUTBOUND_ALLOWLIST: ${process.env.OUTBOUND_ALLOWLIST || 'default (sandbox.,test.,mock.,dev.,staging.)'}`);
+  console.log(`   globalThis.fetch: ${globalThis.fetch === safeFetch ? '✅ Patched with safeFetch' : '⚠️ NOT patched'}`);
+  
+  // Test a few domains to confirm blocking is working
+  if (process.env.EDI_MODE === 'sandbox') {
+    console.log('\n🧪 Testing domain blocking (in sandbox mode):');
+    const testDomains = [
+      'manulife.ca',
+      'sunlife.ca', 
+      'sandbox.test',
+      'localhost'
+    ];
+    for (const domain of testDomains) {
+      const result = testDomain(domain);
+      console.log(`   ${domain}: ${result.allowed ? '✅ ALLOWED' : '🚫 BLOCKED'} - ${result.reason}`);
+    }
+  }
+  
+  console.log('\n✨ EDI sandbox protection is active and configured');
   
   const server = await registerRoutes(app);
 

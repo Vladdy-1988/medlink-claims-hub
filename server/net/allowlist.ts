@@ -31,7 +31,9 @@ const BLOCKED_DOMAINS = [
 
 // Parse allowed prefixes from environment
 function getAllowedPrefixes(): string[] {
-  const allowlist = process.env.OUTBOUND_ALLOWLIST || 'sandbox.,test.,mock.,dev.,staging.';
+  // Default allowlist includes common development/testing prefixes
+  const defaultAllowlist = 'localhost,127.0.0.1,sandbox.,test.,mock.,dev.,staging.,api-staging.,cdn.';
+  const allowlist = process.env.OUTBOUND_ALLOWLIST || defaultAllowlist;
   return allowlist.split(',').map(p => p.trim()).filter(p => p.length > 0);
 }
 
@@ -79,6 +81,12 @@ function isDomainAllowed(hostname: string): boolean {
 
 // Create SANDBOX_BLOCKED error response
 function createBlockedResponse(hostname: string): any {
+  // Create a fake Headers object that mimics the real one
+  const mockHeaders = new Map([
+    ['content-type', 'application/json'],
+    ['x-sandbox-blocked', 'true']
+  ]);
+  
   return {
     ok: false,
     status: 403,
@@ -91,7 +99,12 @@ function createBlockedResponse(hostname: string): any {
     }),
     text: async () => `SANDBOX_BLOCKED: ${hostname}`,
     headers: {
-      get: () => null
+      get: (key: string) => mockHeaders.get(key.toLowerCase()) || null,
+      entries: () => mockHeaders.entries(),
+      keys: () => mockHeaders.keys(),
+      values: () => mockHeaders.values(),
+      has: (key: string) => mockHeaders.has(key.toLowerCase()),
+      forEach: (fn: Function) => mockHeaders.forEach(fn)
     }
   };
 }

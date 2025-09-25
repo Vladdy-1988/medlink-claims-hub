@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import cors from "cors";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { safeFetch, testDomain } from "./net/allowlist";
 
 // Development mode authentication bypass
 const devAuth = (middleware: any) => {
@@ -117,6 +118,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'Test error thrown successfully',
         error: (error as Error).message,
         sentryEnabled: !!process.env.SENTRY_DSN
+      });
+    }
+  });
+
+  // EDI Sandbox Blocking test endpoint
+  app.get('/api/test-edi-block', async (req, res) => {
+    try {
+      const targetUrl = req.query.url as string;
+      
+      if (!targetUrl) {
+        return res.status(400).json({
+          error: 'Missing URL parameter',
+          usage: '/api/test-edi-block?url=https://example.com'
+        });
+      }
+
+      console.log(`\n🧪 Testing EDI blocking for: ${targetUrl}`);
+      console.log(`   EDI_MODE=${process.env.EDI_MODE}`);
+      console.log(`   OUTBOUND_ALLOWLIST=${process.env.OUTBOUND_ALLOWLIST || 'default'}`);
+      
+      // First test if the domain would be blocked
+      const parsedUrl = new URL(targetUrl);
+      const domainTest = testDomain(parsedUrl.hostname);
+      
+      console.log(`   Domain test: ${domainTest.allowed ? '✅ ALLOWED' : '🚫 BLOCKED'}`);
+      console.log(`   Reason: ${domainTest.reason}`);
+      
+      // Try to fetch using safeFetch
+      const startTime = Date.now();
+      let fetchResult;
+      let fetchError;
+      
+      try {
+        const response = await safeFetch(targetUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'MedLink-EDI-Test/1.0'
+          },
+          // Set a timeout of 5 seconds
+          signal: AbortSignal.timeout(5000)
+        });
+        
+        const responseTime = Date.now() - startTime;
+        
+        // Try to get response text (limited to first 500 chars)
+        let responsePreview = '';
+        try {
+          const text = await response.text();
+          responsePreview = text.substring(0, 500);
+        } catch (e) {
+          responsePreview = 'Unable to read response body';
+        }
+        
+        fetchResult = {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          responseTimeMs: responseTime,
+          headers: Object.fromEntries([...response.headers.entries()].slice(0, 5)),
+          preview: responsePreview.includes('SANDBOX_BLOCKED') ? 'SANDBOX_BLOCKED' : responsePreview.substring(0, 100)
+        };
+        
+        console.log(`   Fetch result: Status ${response.status} in ${responseTime}ms`);
+      } catch (error: any) {
+        fetchError = {
+          message: error.message,
+          code: error.code,
+          type: error.constructor.name
+        };
+        console.log(`   Fetch error: ${error.message}`);
+      }
+      
+      // Return comprehensive test results
+      const result = {
+        test: 'EDI Sandbox Blocking Test',
+        timestamp: new Date().toISOString(),
+        environment: {
+          EDI_MODE: process.env.EDI_MODE || 'not set',
+          OUTBOUND_ALLOWLIST: process.env.OUTBOUND_ALLOWLIST || 'default',
+          NODE_ENV: process.env.NODE_ENV
+        },
+        target: {
+          url: targetUrl,
+          hostname: parsedUrl.hostname,
+          protocol: parsedUrl.protocol
+        },
+        domainCheck: domainTest,
+        fetchAttempt: fetchResult || null,
+        fetchError: fetchError || null,
+        verdict: {
+          blocked: !domainTest.allowed,
+          sandboxWorking: process.env.EDI_MODE === 'sandbox' && !domainTest.allowed,
+          message: domainTest.allowed 
+            ? `Domain ${parsedUrl.hostname} is ALLOWED` 
+            : `Domain ${parsedUrl.hostname} is BLOCKED in sandbox mode`
+        }
+      };
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error('Test endpoint error:', error);
+      res.status(500).json({
+        error: 'Test endpoint error',
+        message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
     }
   });
