@@ -1,0 +1,143 @@
+name: Nightly Performance Testing
+
+on:
+  schedule:
+    # Run at 03:30 UTC daily
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - development
+
+env:
+  # Default to staging URL if not overridden
+  TEST_URL: ${{ github.event.inputs.environment == 'development' && secrets.DEV_BASE_URL || secrets.STAGING_BASE_URL }}
+
+jobs:
+  performance-test:
+    name: K6 Performance Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup K6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+          
+      - name: Run K6 smoke tests
+        id: k6-test
+        run: |
+          echo "Running K6 performance tests against ${{ env.TEST_URL }}"
+          
+          # Create results directory
+          mkdir -p k6-results
+          
+          # Run k6 tests with JSON output
+          k6 run \
+            --out json=k6-results/results.json \
+            --summary-export=k6-results/summary.json \
+            scripts/k6-smoke.js \
+            -e BASE_URL=${{ env.TEST_URL }} \
+            || echo "K6_FAILED=true" >> $GITHUB_ENV
+          
+      - name: Process K6 results
+        if: always()
+        run: |
+          echo "## 📊 Performance Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Test URL:** ${{ env.TEST_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f k6-results/summary.json ]; then
+            echo "### Metrics Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat k6-results/summary.json | jq '.' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            
+            # Extract key metrics for SLO validation
+            P95_LATENCY=$(cat k6-results/summary.json | jq -r '.metrics.http_req_duration.values."p(95)"' || echo "0")
+            ERROR_RATE=$(cat k6-results/summary.json | jq -r '.metrics.http_req_failed.values.rate' || echo "0")
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### SLO Validation" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value | Target | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+            
+            # Check P95 latency (should be < 400ms)
+            if (( $(echo "$P95_LATENCY < 400" | bc -l) )); then
+              echo "| P95 Latency | ${P95_LATENCY}ms | < 400ms | ✅ PASS |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| P95 Latency | ${P95_LATENCY}ms | < 400ms | ❌ FAIL |" >> $GITHUB_STEP_SUMMARY
+              echo "SLO_FAILED=true" >> $GITHUB_ENV
+            fi
+            
+            # Check error rate (should be < 1%)
+            ERROR_PCT=$(echo "$ERROR_RATE * 100" | bc -l)
+            if (( $(echo "$ERROR_PCT < 1" | bc -l) )); then
+              echo "| Error Rate | ${ERROR_PCT}% | < 1% | ✅ PASS |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| Error Rate | ${ERROR_PCT}% | < 1% | ❌ FAIL |" >> $GITHUB_STEP_SUMMARY
+              echo "SLO_FAILED=true" >> $GITHUB_ENV
+            fi
+          else
+            echo "⚠️ No summary file found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+      - name: Upload K6 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-performance-results-${{ github.run_id }}
+          path: k6-results/
+          retention-days: 30
+          
+      - name: Create issue if SLO failed
+        if: env.SLO_FAILED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🚨 Nightly Performance Test SLO Violation - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## Performance SLO Violation Detected
+            
+            **Environment:** ${{ github.event.inputs.environment || 'staging' }}
+            **Run ID:** ${{ github.run_id }}
+            **Run URL:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ### Failed SLOs
+            Please check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed metrics.
+            
+            ### Action Required
+            - Review performance metrics
+            - Identify performance bottlenecks
+            - Implement optimizations if needed
+            
+            cc: @devops-team`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['performance', 'slo-violation', 'staging']
+            });
+            
+      - name: Fail job if tests failed
+        if: env.K6_FAILED == 'true' || env.SLO_FAILED == 'true'
+        run: |
+          echo "❌ Performance tests or SLO validation failed"
+          exit 1

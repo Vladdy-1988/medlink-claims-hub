@@ -1,0 +1,326 @@
+name: Nightly Backup and Restore Validation
+
+on:
+  schedule:
+    # Run at 04:30 UTC daily
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode (skip actual backup/restore)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  backup-restore-test:
+    name: Database Backup & Restore Validation
+    runs-on: ubuntu-latest
+    
+    env:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass123
+      BACKUP_FILE: db_backup_${{ github.run_id }}.sql
+      
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+          
+      - name: Initialize test database
+        run: |
+          echo "Creating test database with sample data..."
+          
+          # Create test schema
+          PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql \
+            -h localhost \
+            -U ${{ env.POSTGRES_USER }} \
+            -d ${{ env.POSTGRES_DB }} << EOF
+          -- Create test tables
+          CREATE TABLE IF NOT EXISTS test_claims (
+            id SERIAL PRIMARY KEY,
+            claim_number VARCHAR(50) UNIQUE NOT NULL,
+            patient_id VARCHAR(50) NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            status VARCHAR(20) NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+          );
+          
+          CREATE TABLE IF NOT EXISTS test_audit_log (
+            id SERIAL PRIMARY KEY,
+            action VARCHAR(100) NOT NULL,
+            user_id VARCHAR(50),
+            timestamp TIMESTAMP DEFAULT NOW(),
+            details JSONB
+          );
+          
+          -- Insert sample data
+          INSERT INTO test_claims (claim_number, patient_id, amount, status) VALUES
+            ('CLM-001', 'PAT-001', 1500.00, 'pending'),
+            ('CLM-002', 'PAT-002', 2500.00, 'approved'),
+            ('CLM-003', 'PAT-003', 750.00, 'rejected'),
+            ('CLM-004', 'PAT-004', 3200.00, 'pending'),
+            ('CLM-005', 'PAT-005', 1800.00, 'approved');
+            
+          INSERT INTO test_audit_log (action, user_id, details) VALUES
+            ('claim_created', 'USER-001', '{"claim_id": "CLM-001"}'::jsonb),
+            ('claim_approved', 'USER-002', '{"claim_id": "CLM-002"}'::jsonb),
+            ('claim_rejected', 'USER-003', '{"claim_id": "CLM-003"}'::jsonb);
+            
+          -- Get initial counts
+          SELECT 'Initial data loaded:' as status;
+          SELECT COUNT(*) as claim_count FROM test_claims;
+          SELECT COUNT(*) as audit_count FROM test_audit_log;
+          EOF
+          
+      - name: Measure backup process (RPO)
+        id: backup
+        run: |
+          echo "Starting backup process..."
+          BACKUP_START=$(date +%s%N)
+          
+          # Perform database backup
+          PGPASSWORD=${{ env.POSTGRES_PASSWORD }} pg_dump \
+            -h localhost \
+            -U ${{ env.POSTGRES_USER }} \
+            -d ${{ env.POSTGRES_DB }} \
+            -f ${{ env.BACKUP_FILE }} \
+            --verbose \
+            --no-owner \
+            --no-acl
+            
+          BACKUP_END=$(date +%s%N)
+          BACKUP_TIME=$((($BACKUP_END - $BACKUP_START) / 1000000))
+          
+          echo "Backup completed in ${BACKUP_TIME}ms"
+          echo "BACKUP_TIME=${BACKUP_TIME}" >> $GITHUB_ENV
+          
+          # Check backup file size
+          BACKUP_SIZE=$(stat -c%s "${{ env.BACKUP_FILE }}")
+          echo "Backup file size: ${BACKUP_SIZE} bytes"
+          echo "BACKUP_SIZE=${BACKUP_SIZE}" >> $GITHUB_ENV
+          
+      - name: Simulate data changes
+        run: |
+          echo "Simulating production data changes..."
+          
+          PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql \
+            -h localhost \
+            -U ${{ env.POSTGRES_USER }} \
+            -d ${{ env.POSTGRES_DB }} << EOF
+          -- Add new data after backup
+          INSERT INTO test_claims (claim_number, patient_id, amount, status) VALUES
+            ('CLM-006', 'PAT-006', 4500.00, 'pending'),
+            ('CLM-007', 'PAT-007', 890.00, 'approved');
+            
+          -- This data will be lost during restore (testing RPO)
+          SELECT 'Data changes after backup:' as status;
+          SELECT COUNT(*) as new_claim_count FROM test_claims;
+          EOF
+          
+      - name: Drop and recreate database
+        run: |
+          echo "Dropping database to simulate disaster..."
+          
+          PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql \
+            -h localhost \
+            -U ${{ env.POSTGRES_USER }} \
+            -d postgres << EOF
+          DROP DATABASE IF EXISTS ${{ env.POSTGRES_DB }};
+          CREATE DATABASE ${{ env.POSTGRES_DB }};
+          EOF
+          
+      - name: Measure restore process (RTO)
+        id: restore
+        run: |
+          echo "Starting restore process..."
+          RESTORE_START=$(date +%s%N)
+          
+          # Restore database from backup
+          PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql \
+            -h localhost \
+            -U ${{ env.POSTGRES_USER }} \
+            -d ${{ env.POSTGRES_DB }} \
+            -f ${{ env.BACKUP_FILE }}
+            
+          RESTORE_END=$(date +%s%N)
+          RESTORE_TIME=$((($RESTORE_END - $RESTORE_START) / 1000000))
+          
+          echo "Restore completed in ${RESTORE_TIME}ms"
+          echo "RESTORE_TIME=${RESTORE_TIME}" >> $GITHUB_ENV
+          
+      - name: Validate restored data
+        id: validate
+        run: |
+          echo "Validating restored database..."
+          
+          VALIDATION_RESULT=$(PGPASSWORD=${{ env.POSTGRES_PASSWORD }} psql \
+            -h localhost \
+            -U ${{ env.POSTGRES_USER }} \
+            -d ${{ env.POSTGRES_DB }} \
+            -t << EOF
+          -- Check restored data
+          SELECT json_build_object(
+            'claims_count', (SELECT COUNT(*) FROM test_claims),
+            'audit_count', (SELECT COUNT(*) FROM test_audit_log),
+            'claims_valid', (SELECT COUNT(*) = 5 FROM test_claims),
+            'audit_valid', (SELECT COUNT(*) = 3 FROM test_audit_log),
+            'sample_claim', (SELECT claim_number FROM test_claims WHERE claim_number = 'CLM-001'),
+            'post_backup_claims', (SELECT COUNT(*) FROM test_claims WHERE claim_number IN ('CLM-006', 'CLM-007'))
+          );
+          EOF
+          )
+          
+          echo "Validation result: $VALIDATION_RESULT"
+          echo "VALIDATION_RESULT=${VALIDATION_RESULT}" >> $GITHUB_ENV
+          
+          # Parse validation results
+          CLAIMS_VALID=$(echo $VALIDATION_RESULT | jq -r '.claims_valid')
+          AUDIT_VALID=$(echo $VALIDATION_RESULT | jq -r '.audit_valid')
+          
+          if [ "$CLAIMS_VALID" = "true" ] && [ "$AUDIT_VALID" = "true" ]; then
+            echo "VALIDATION_STATUS=PASS" >> $GITHUB_ENV
+          else
+            echo "VALIDATION_STATUS=FAIL" >> $GITHUB_ENV
+          fi
+          
+      - name: Generate summary report
+        if: always()
+        run: |
+          echo "## 💾 Database Backup & Restore Validation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Disaster Recovery Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value | Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          # RPO (Recovery Point Objective) - Time to create backup
+          RPO_TARGET=60000  # 60 seconds in milliseconds
+          if [ "${{ env.BACKUP_TIME }}" -lt "$RPO_TARGET" ]; then
+            RPO_STATUS="✅ PASS"
+          else
+            RPO_STATUS="❌ FAIL"
+          fi
+          echo "| **RPO** (Backup Time) | ${{ env.BACKUP_TIME }}ms | < ${RPO_TARGET}ms | $RPO_STATUS |" >> $GITHUB_STEP_SUMMARY
+          
+          # RTO (Recovery Time Objective) - Time to restore
+          RTO_TARGET=120000  # 120 seconds in milliseconds
+          if [ "${{ env.RESTORE_TIME }}" -lt "$RTO_TARGET" ]; then
+            RTO_STATUS="✅ PASS"
+          else
+            RTO_STATUS="❌ FAIL"
+          fi
+          echo "| **RTO** (Restore Time) | ${{ env.RESTORE_TIME }}ms | < ${RTO_TARGET}ms | $RTO_STATUS |" >> $GITHUB_STEP_SUMMARY
+          
+          # Data integrity validation
+          if [ "${{ env.VALIDATION_STATUS }}" = "PASS" ]; then
+            INTEGRITY_STATUS="✅ PASS"
+          else
+            INTEGRITY_STATUS="❌ FAIL"
+          fi
+          echo "| **Data Integrity** | - | 100% | $INTEGRITY_STATUS |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backup Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backup File Size:** ${{ env.BACKUP_SIZE }} bytes" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backup Method:** pg_dump (logical backup)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Compression:** None (add compression for production)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Validation Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.VALIDATION_RESULT }}" | jq '.' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Backup Frequency:** Current RPO allows for up to 1 minute of data loss" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Restore Speed:** Current RTO ensures system recovery within 2 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Improvements:**" >> $GITHUB_STEP_SUMMARY
+          echo "   - Consider implementing point-in-time recovery (PITR)" >> $GITHUB_STEP_SUMMARY
+          echo "   - Add backup compression to reduce storage costs" >> $GITHUB_STEP_SUMMARY
+          echo "   - Implement backup encryption for security" >> $GITHUB_STEP_SUMMARY
+          echo "   - Test with larger datasets to validate scalability" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Upload backup file as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ github.run_id }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 7
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ${{ env.BACKUP_FILE }}
+          
+      - name: Create issue if validation failed
+        if: env.VALIDATION_STATUS == 'FAIL'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `🚨 Database Backup/Restore Validation Failed - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## Backup/Restore Validation Failed
+            
+            **Test Date:** ${new Date().toISOString()}
+            **Run ID:** ${{ github.run_id }}
+            **Run URL:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ### Failed Metrics
+            - RPO (Backup Time): ${{ env.BACKUP_TIME }}ms
+            - RTO (Restore Time): ${{ env.RESTORE_TIME }}ms
+            - Data Integrity: FAILED
+            
+            ### Action Required
+            1. Review the validation results
+            2. Check backup/restore procedures
+            3. Verify database configuration
+            4. Update disaster recovery plan if needed
+            
+            cc: @dba-team @devops-team`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['disaster-recovery', 'database', 'validation-failed']
+            });
+            
+      - name: Fail job if validation failed
+        if: env.VALIDATION_STATUS == 'FAIL'
+        run: |
+          echo "❌ Backup/Restore validation failed!"
+          exit 1

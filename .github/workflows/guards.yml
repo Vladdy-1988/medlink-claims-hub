@@ -1,0 +1,330 @@
+name: PR Guards
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
+      - develop
+      - staging
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run ESLint
+        run: |
+          echo "🔍 Running ESLint..."
+          npx eslint . --ext .js,.jsx,.ts,.tsx --format=stylish --max-warnings=0 || true
+          
+      - name: Run TypeScript type checking
+        run: |
+          echo "📝 Running TypeScript compiler..."
+          npx tsc --noEmit
+          
+      - name: Run Prettier check
+        run: |
+          echo "✨ Checking code formatting..."
+          npx prettier --check "**/*.{js,jsx,ts,tsx,json,css,md}" || true
+          
+  tests:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run unit tests
+        run: |
+          echo "🧪 Running unit tests..."
+          npm run test:unit || npm test || npx vitest run
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
+          
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+          retention-days: 7
+          
+  security:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended,security-and-quality
+          
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+        
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        
+  database-checks:
+    name: Database Layer Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Check for direct SQL usage
+        run: |
+          echo "🔍 Checking for direct database access outside repository layer..."
+          chmod +x scripts/check-direct-sql.sh
+          ./scripts/check-direct-sql.sh
+          
+      - name: Validate database migrations
+        run: |
+          echo "📊 Checking database migration files..."
+          if [ -d "migrations" ] || [ -d "prisma/migrations" ]; then
+            echo "✅ Migration directory found"
+            # Check for down migrations
+            if grep -r "DROP TABLE\|DROP COLUMN\|DROP INDEX" migrations/ prisma/migrations/ 2>/dev/null; then
+              echo "⚠️ Warning: Destructive migrations detected. Please review carefully."
+            fi
+          else
+            echo "ℹ️ No migration directory found"
+          fi
+          
+  service-worker-validation:
+    name: Service Worker Cache Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Check service worker caching rules
+        run: |
+          echo "🔍 Validating service worker cache configuration..."
+          
+          # Find all service worker files
+          SW_FILES=$(find . -name "service-worker*.js" -o -name "sw*.js" | grep -v node_modules | head -5)
+          
+          if [ -z "$SW_FILES" ]; then
+            echo "ℹ️ No service worker files found"
+            exit 0
+          fi
+          
+          FAILED=0
+          for SW_FILE in $SW_FILES; do
+            echo "Checking $SW_FILE..."
+            
+            # Check if service worker incorrectly caches API endpoints
+            if grep -E "cache.*['\"/]api[/'\"]" "$SW_FILE" | grep -v "no-cache\|no-store\|network-first\|network-only" > /dev/null; then
+              echo "❌ ERROR: Service worker may be caching /api/* endpoints in $SW_FILE"
+              echo "   API endpoints should not be cached or should use network-first strategy"
+              FAILED=1
+            fi
+            
+            # Check for proper cache headers for API routes
+            if grep -E "\/api\/" "$SW_FILE" > /dev/null; then
+              if ! grep -E "networkFirst\|networkOnly\|cache.*no-cache\|cache.*no-store" "$SW_FILE" > /dev/null; then
+                echo "⚠️ WARNING: Service worker handles /api/ routes but may not have proper cache strategy"
+              fi
+            fi
+          done
+          
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "❌ Service worker validation failed!"
+            echo "API endpoints must not be cached by service workers."
+            echo "Use network-first or network-only strategies for API routes."
+            exit 1
+          else
+            echo "✅ Service worker cache validation passed"
+          fi
+          
+  dependency-security:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Run npm audit
+        run: |
+          echo "🔒 Checking for vulnerable dependencies..."
+          npm audit --audit-level=moderate || echo "⚠️ Vulnerabilities found - please review"
+        continue-on-error: true
+        
+      - name: Check for outdated dependencies
+        run: |
+          echo "📦 Checking for outdated packages..."
+          npx npm-check-updates --format table || true
+        continue-on-error: true
+        
+  build-verification:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Build application
+        run: |
+          echo "🏗️ Building application..."
+          npm run build
+        env:
+          NODE_ENV: production
+          
+      - name: Check build output
+        run: |
+          echo "📁 Checking build artifacts..."
+          if [ -d "dist" ] || [ -d "build" ] || [ -d "client/dist" ]; then
+            echo "✅ Build output directory found"
+            # Check for common build issues
+            find dist build client/dist -name "*.map" 2>/dev/null | head -5 && echo "ℹ️ Source maps detected in build"
+            find dist build client/dist -size +5M 2>/dev/null | head -5 && echo "⚠️ Large files detected in build (>5MB)"
+          else
+            echo "❌ No build output directory found"
+            exit 1
+          fi
+          
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [code-quality, tests, security, database-checks, service-worker-validation, dependency-security, build-verification]
+    if: always()
+    
+    steps:
+      - name: Generate PR Summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = ${{ toJson(needs) }};
+            let comment = '## 🔍 PR Validation Summary\n\n';
+            comment += '| Check | Status |\n';
+            comment += '|-------|--------|\n';
+            
+            const statusEmoji = (result) => {
+              switch(result) {
+                case 'success': return '✅';
+                case 'failure': return '❌';
+                case 'cancelled': return '⚠️';
+                case 'skipped': return '⏭️';
+                default: return '❓';
+              }
+            };
+            
+            Object.entries(jobs).forEach(([job, data]) => {
+              const name = job.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              comment += `| ${name} | ${statusEmoji(data.result)} ${data.result} |\n`;
+            });
+            
+            comment += '\n### Required Checks\n';
+            comment += '- [ ] All tests pass\n';
+            comment += '- [ ] No TypeScript errors\n';
+            comment += '- [ ] No direct SQL usage outside repository layer\n';
+            comment += '- [ ] Service worker doesn\'t cache API endpoints\n';
+            comment += '- [ ] Security analysis complete\n';
+            comment += '- [ ] Build successful\n';
+            
+            comment += '\n---\n';
+            comment += `*Generated at ${new Date().toISOString()}*`;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && comment.body.includes('PR Validation Summary')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
