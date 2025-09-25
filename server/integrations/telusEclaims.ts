@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Claim, PreAuth } from '@shared/schema';
+import { safeFetch } from '../net/allowlist';
 
 /**
  * Telus eClaims Integration
@@ -79,7 +80,7 @@ export class TelusEClaimsService {
     console.log(`[TelusEClaims] Submitting claim ${claim.id} to Telus eClaims`);
     
     // TODO: Replace with actual API call
-    // const response = await fetch(`${this.apiEndpoint}/claims`, {
+    // const response = await safeFetch(`${this.apiEndpoint}/claims`, {
     //   method: 'POST',
     //   headers: {
     //     'Authorization': `Bearer ${this.apiKey}`,
@@ -115,7 +116,7 @@ export class TelusEClaimsService {
     console.log(`[TelusEClaims] Polling status for submission: ${submissionId}`);
     
     // TODO: Replace with actual API call
-    // const response = await fetch(`${this.apiEndpoint}/claims/${submissionId}/status`, {
+    // const response = await safeFetch(`${this.apiEndpoint}/claims/${submissionId}/status`, {
     //   method: 'GET',
     //   headers: {
     //     'Authorization': `Bearer ${this.apiKey}`,

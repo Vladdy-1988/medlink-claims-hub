@@ -2,6 +2,10 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initSentry, getSentryMiddleware } from "./monitoring/sentry";
+import { safeFetch } from "./net/allowlist";
+
+// Patch global fetch to enforce allowlist IMMEDIATELY
+globalThis.fetch = safeFetch;
 
 const app = express();
 
@@ -100,15 +104,8 @@ app.use((req, res, next) => {
     console.error('❌ Failed to initialize EDI job queue:', error);
   }
   
-  // Global EDI blocking enforcement - patch fetch
-  // Note: Node.js http/https modules cannot be patched due to read-only properties
-  // Instead, we enforce usage of safeFetch, safeHttpsRequest in application code
-  const { safeFetch, verifySandboxMode } = await import("./net/allowlist");
-  
-  // Monkey-patch global fetch to use safe version
-  (globalThis as any).fetch = safeFetch;
-  
   // Verify sandbox mode configuration
+  const { verifySandboxMode } = await import("./net/allowlist");
   verifySandboxMode();
   
   console.log('✅ Global fetch patched with EDI allowlist enforcement');

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Claim, PreAuth } from '@shared/schema';
+import { safeFetch } from '../net/allowlist';
 
 /**
  * CDAnet Integration (Canadian Dental Association Network)
@@ -88,7 +89,7 @@ export class CDAnetService {
     console.log(`[CDAnet] Submitting dental claim ${claim.id} to CDAnet`);
     
     // TODO: Replace with actual API call
-    // const response = await fetch(`${this.apiEndpoint}/claims/submit`, {
+    // const response = await safeFetch(`${this.apiEndpoint}/claims/submit`, {
     //   method: 'POST',
     //   headers: {
     //     'Content-Type': 'application/json',
@@ -126,7 +127,7 @@ export class CDAnetService {
     console.log(`[CDAnet] Polling status for submission: ${submissionId}`);
     
     // TODO: Replace with actual API call
-    // const response = await fetch(`${this.apiEndpoint}/claims/${submissionId}/status`, {
+    // const response = await safeFetch(`${this.apiEndpoint}/claims/${submissionId}/status`, {
     //   method: 'GET',
     //   headers: {
     //     'Provider-ID': this.providerId,

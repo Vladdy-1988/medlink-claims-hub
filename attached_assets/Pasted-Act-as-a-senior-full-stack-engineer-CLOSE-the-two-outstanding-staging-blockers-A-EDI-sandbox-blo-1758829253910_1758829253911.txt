@@ -1,0 +1,67 @@
+Act as a senior full-stack engineer. CLOSE the two outstanding staging blockers:
+(A) EDI sandbox blocking = 100%
+(B) Smoke tests = 100% pass
+
+Work on branch `staging/fix-edi-and-smoke`, then open a PR. Append all outputs to `docs/staging/DAY0_REPORT.md` under “BLOCKERS FIX”.
+
+A) EDI SANDBOX — FORCE 100% ENFORCEMENT
+Goal: In sandbox, ALL outbound HTTP MUST go through an allowlist wrapper. Production insurer domains must be blocked even if someone uses native fetch/axios directly.
+
+1) Global fetch/axios patch:
+   - In server bootstrap (early in `server/index.ts` or equivalent), wrap/monkey-patch:
+     - `globalThis.fetch = httpFetch` (our allowlisted wrapper).
+     - For axios, create an axios instance with a request interceptor that validates host against allowlist. Export it and forbid raw `axios` usage.
+   - Add CI greps to fail if:
+     - `axios.` is imported/used outside our `server/net/httpClient.ts`
+     - `fetch(` is called directly anywhere server-side (except the wrapper file).
+
+2) Allowlist logic (strict):
+   - Env: `EDI_MODE=sandbox`
+   - Env: `OUTBOUND_ALLOWLIST=localhost,127.0.0.1,sandbox.,test.,mock.,api-staging.,cdn.,<your-staging-host>`
+   - Allow if host equals localhost/127.0.0.1 OR startsWith any listed prefix OR endsWith exact domain from allowlist with dot-handling.
+   - Block everything else with error code `SANDBOX_BLOCKED:<host>`.
+
+3) Tests:
+   - Unit test: calling `https://www.manulife.ca/` and `https://www.sunlife.ca/` in sandbox => throws `SANDBOX_BLOCKED`.
+   - Unit test: calling `https://sandbox.example-insurer.test/` => OK.
+   - Grep proof: show there are ZERO direct `fetch(` calls server-side and ZERO raw `axios` imports outside the approved client.
+
+4) Evidence (append to DAY0_REPORT.md):
+   - Print `OUTBOUND_ALLOWLIST`.
+   - Paste failing attempt logs to `*.ca` prod insurer.
+   - Paste success call to sandbox domain (`SANDBOX-...` response if applicable).
+   - Paste CI grep output proving no forbidden usage.
+
+B) SMOKE TESTS — DRIVE TO 100% PASS
+Goal: `scripts/smoke.sh` must pass all checks (health, auth, claims CRUD) against STAGING_BASE_URL.
+
+1) Health endpoint:
+   - Ensure `/healthz` returns JSON:
+     `{ status:'ok'|'degraded', version, uptimeSec, db:{ ok:boolean, latencyMs:number } }`
+   - Non-OK DB should set HTTP 503; OK path must show `db.ok=true`.
+   - Update `scripts/uptime.sh` to `curl -fsS "$BASE/healthz" | jq -re '.db.ok==true'`.
+
+2) Auth flow:
+   - `POST /api/auth/login` (non-admin test user) should return 200 + session/JWT.
+   - If login route or body schema changed, update `scripts/smoke.sh` accordingly.
+   - Seed a synthetic user for staging smoke (`scripts/seed_staging_user.ts`).
+
+3) Claims CRUD:
+   - `POST /api/claims` with synthetic body → 201 and returns `{id}`.
+   - `GET /api/claims/:id` → 200 with expected fields.
+   - If validation fails, adjust smoke payload to match the current DTO (add minimal required fields).
+
+4) Run smoke locally, then stage:
+   - First run against local (`BASE=http://localhost:5000 ./scripts/smoke.sh`) and paste results.
+   - Once deployed to real staging, set `STAGING_BASE_URL` in GitHub Secrets and run smoke via CI job; paste the run URL.
+
+5) Evidence (append to DAY0_REPORT.md):
+   - Full `scripts/smoke.sh` output (colorized lines OK).
+   - A small JSON snippet of created claim and subsequent GET result.
+   - A final summary line: `SMOKE: PASS (N/N)`.
+
+C) ACCEPTANCE
+- EDI: Attempting calls to real insurers (e.g., manulife.ca, sunlife.ca, telus.com) is BLOCKED with `SANDBOX_BLOCKED`; sandbox/test hosts work. CI greps enforce no direct fetch/axios usage.
+- Smoke: `scripts/smoke.sh` is GREEN (100% pass) against current BASE.
+- Append all terminal outputs to `docs/staging/DAY0_REPORT.md` under “BLOCKERS FIX — PASS”.
+- Open PR `staging/fix-edi-and-smoke` with a concise summary.

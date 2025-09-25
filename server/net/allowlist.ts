@@ -5,7 +5,6 @@
  */
 
 import { URL } from 'url';
-import fetch from 'node-fetch';
 import https from 'https';
 import http from 'http';
 
@@ -20,6 +19,7 @@ const BLOCKED_DOMAINS = [
   'worksafebc.com',
   'claims.greenshield.ca',
   'provider.canadalife.com',
+  'canadalife.com',
   'bluecross.ca',
   'desjardins.com',
   'ssq.ca',
@@ -29,19 +29,11 @@ const BLOCKED_DOMAINS = [
   'provider.medavie.ca'
 ];
 
-// Allowed patterns in sandbox mode
-const ALLOWED_PATTERNS = [
-  /^localhost(:\d+)?$/,
-  /^127\.0\.0\.1(:\d+)?$/,
-  /^sandbox\./,
-  /^test\./,
-  /^mock\./,
-  /^dev\./,
-  /^staging\./,
-  /\.sandbox\./,
-  /\.test\./,
-  /\.mock\./
-];
+// Parse allowed prefixes from environment
+function getAllowedPrefixes(): string[] {
+  const allowlist = process.env.OUTBOUND_ALLOWLIST || 'sandbox.,test.,mock.,dev.,staging.';
+  return allowlist.split(',').map(p => p.trim()).filter(p => p.length > 0);
+}
 
 // Check if a domain is allowed
 function isDomainAllowed(hostname: string): boolean {
@@ -50,56 +42,109 @@ function isDomainAllowed(hostname: string): boolean {
     return true;
   }
 
-  // Check against allowed patterns
-  for (const pattern of ALLOWED_PATTERNS) {
-    if (pattern.test(hostname.toLowerCase())) {
+  // Always allow localhost
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return true;
+  }
+
+  // Allow localhost with port
+  if (hostname.startsWith('localhost:') || hostname.startsWith('127.0.0.1:')) {
+    return true;
+  }
+
+  // Check against allowed prefixes from environment
+  const allowedPrefixes = getAllowedPrefixes();
+  const lowerHostname = hostname.toLowerCase();
+  
+  for (const prefix of allowedPrefixes) {
+    if (lowerHostname.startsWith(prefix)) {
+      return true;
+    }
+    // Also check for subdomain patterns like *.sandbox.*
+    if (lowerHostname.includes(`.${prefix}`)) {
       return true;
     }
   }
 
-  // Check against blocked domains
-  const domain = hostname.toLowerCase();
+  // Check against blocked production domains - explicitly block them
   for (const blocked of BLOCKED_DOMAINS) {
-    if (domain === blocked || domain.endsWith(`.${blocked}`)) {
+    if (lowerHostname === blocked || lowerHostname.endsWith(`.${blocked}`)) {
       return false;
     }
   }
 
-  // Allow by default if not in blocked list
-  return true;
+  // STRICT MODE: Block everything else in sandbox mode
+  return false;
+}
+
+// Create SANDBOX_BLOCKED error response
+function createBlockedResponse(hostname: string): any {
+  return {
+    ok: false,
+    status: 403,
+    statusText: 'Forbidden - Production domain blocked in sandbox mode',
+    json: async () => ({
+      error: 'SANDBOX_BLOCKED',
+      message: `Domain ${hostname} is blocked in sandbox mode`,
+      domain: hostname,
+      allowedPrefixes: getAllowedPrefixes()
+    }),
+    text: async () => `SANDBOX_BLOCKED: ${hostname}`,
+    headers: {
+      get: () => null
+    }
+  };
 }
 
 // Wrap fetch for sandbox protection
-export async function safeFetch(url: string, options?: any): Promise<any> {
+export async function safeFetch(url: string | Request | URL, options?: RequestInit): Promise<Response> {
   try {
-    const parsedUrl = new URL(url);
-    
-    if (!isDomainAllowed(parsedUrl.hostname)) {
-      console.warn(`🚫 BLOCKED: Attempt to contact production domain in sandbox mode: ${parsedUrl.hostname}`);
-      
-      // Return mock response for blocked domains
-      return {
-        ok: false,
-        status: 403,
-        statusText: 'Forbidden - Production domain blocked in sandbox mode',
-        json: async () => ({
-          error: 'SANDBOX_BLOCKED',
-          message: `Production domain ${parsedUrl.hostname} is blocked in sandbox mode`,
-          domain: parsedUrl.hostname
-        }),
-        text: async () => `SANDBOX-BLOCKED: ${parsedUrl.hostname}`
-      };
+    // Handle different input types
+    let urlString: string;
+    if (typeof url === 'string') {
+      urlString = url;
+    } else if (url instanceof URL) {
+      urlString = url.toString();
+    } else if (url instanceof Request) {
+      urlString = url.url;
+    } else {
+      urlString = String(url);
     }
 
-    // Make the actual request
-    const response = await fetch(url, options);
+    const parsedUrl = new URL(urlString);
     
-    // In sandbox mode, prefix responses
+    if (!isDomainAllowed(parsedUrl.hostname)) {
+      console.error(`🚫 SANDBOX_BLOCKED: Attempt to contact blocked domain: ${parsedUrl.hostname}`);
+      console.error(`   EDI_MODE=${process.env.EDI_MODE}`);
+      console.error(`   Allowed prefixes: ${getAllowedPrefixes().join(', ')}`);
+      
+      // Return mock response for blocked domains
+      return createBlockedResponse(parsedUrl.hostname) as Response;
+    }
+
+    // Make the actual request using native fetch if available
+    let response: Response;
+    if (typeof globalThis.fetch === 'function' && globalThis.fetch !== safeFetch) {
+      // Use native fetch if available (avoid infinite recursion)
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = () => { throw new Error('Nested fetch detected'); };
+      try {
+        response = await originalFetch(url, options);
+      } finally {
+        globalThis.fetch = safeFetch;
+      }
+    } else {
+      // Fallback to node-fetch or other implementation
+      const nodeFetch = await import('node-fetch');
+      response = await nodeFetch.default(urlString, options as any) as any;
+    }
+    
+    // In sandbox mode, add metadata to responses
     if (process.env.EDI_MODE === 'sandbox') {
       const originalJson = response.json.bind(response);
       const originalText = response.text.bind(response);
       
-      response.json = async () => {
+      (response as any).json = async () => {
         const data = await originalJson();
         return {
           ...data,
@@ -108,7 +153,7 @@ export async function safeFetch(url: string, options?: any): Promise<any> {
         };
       };
       
-      response.text = async () => {
+      (response as any).text = async () => {
         const text = await originalText();
         return `SANDBOX-${text}`;
       };
@@ -126,7 +171,7 @@ export function safeHttpsRequest(options: any, callback?: any): any {
   const hostname = options.hostname || options.host;
   
   if (!isDomainAllowed(hostname)) {
-    console.warn(`🚫 BLOCKED: Attempt to contact production domain in sandbox mode: ${hostname}`);
+    console.error(`🚫 SANDBOX_BLOCKED: HTTPS request to blocked domain: ${hostname}`);
     
     const mockResponse = {
       statusCode: 403,
@@ -137,7 +182,8 @@ export function safeHttpsRequest(options: any, callback?: any): any {
         if (event === 'data') {
           handler(Buffer.from(JSON.stringify({
             error: 'SANDBOX_BLOCKED',
-            message: `Production domain ${hostname} is blocked in sandbox mode`
+            message: `Domain ${hostname} is blocked in sandbox mode`,
+            allowedPrefixes: getAllowedPrefixes()
           })));
         }
         if (event === 'end') {
@@ -165,7 +211,7 @@ export function safeHttpRequest(options: any, callback?: any): any {
   const hostname = options.hostname || options.host;
   
   if (!isDomainAllowed(hostname)) {
-    console.warn(`🚫 BLOCKED: Attempt to contact production domain in sandbox mode: ${hostname}`);
+    console.error(`🚫 SANDBOX_BLOCKED: HTTP request to blocked domain: ${hostname}`);
     
     const mockResponse = {
       statusCode: 403,
@@ -176,7 +222,8 @@ export function safeHttpRequest(options: any, callback?: any): any {
         if (event === 'data') {
           handler(Buffer.from(JSON.stringify({
             error: 'SANDBOX_BLOCKED',
-            message: `Production domain ${hostname} is blocked in sandbox mode`
+            message: `Domain ${hostname} is blocked in sandbox mode`,
+            allowedPrefixes: getAllowedPrefixes()
           })));
         }
         if (event === 'end') {
@@ -202,10 +249,13 @@ export function safeHttpRequest(options: any, callback?: any): any {
 // Verify sandbox mode is working
 export function verifySandboxMode(): void {
   if (process.env.EDI_MODE === 'sandbox') {
-    console.log('✅ EDI Sandbox mode enabled - production domains will be blocked');
-    console.log('   Blocked domains:', BLOCKED_DOMAINS.join(', '));
+    console.log('✅ EDI Sandbox mode ACTIVE - strict domain blocking enabled');
+    console.log(`   Allowed prefixes: ${getAllowedPrefixes().join(', ')}`);
+    console.log(`   Blocked production domains: ${BLOCKED_DOMAINS.slice(0, 5).join(', ')}... (${BLOCKED_DOMAINS.length} total)`);
+    console.log('   All other domains will be BLOCKED');
   } else {
-    console.log('⚠️  EDI Sandbox mode disabled - all domains allowed');
+    console.log('⚠️  EDI Sandbox mode DISABLED - all domains allowed');
+    console.log('   Set EDI_MODE=sandbox to enable domain blocking');
   }
 }
 
@@ -215,26 +265,41 @@ export function testDomain(domain: string): { allowed: boolean; reason: string }
     return { allowed: true, reason: 'Not in sandbox mode' };
   }
   
-  const allowed = isDomainAllowed(domain);
-  
-  if (!allowed) {
-    return { 
-      allowed: false, 
-      reason: `Production domain blocked in sandbox mode` 
-    };
+  // Check localhost
+  if (domain === 'localhost' || domain === '127.0.0.1' || 
+      domain.startsWith('localhost:') || domain.startsWith('127.0.0.1:')) {
+    return { allowed: true, reason: 'Localhost is always allowed' };
   }
   
-  for (const pattern of ALLOWED_PATTERNS) {
-    if (pattern.test(domain.toLowerCase())) {
+  // Check allowed prefixes
+  const allowedPrefixes = getAllowedPrefixes();
+  const lowerDomain = domain.toLowerCase();
+  
+  for (const prefix of allowedPrefixes) {
+    if (lowerDomain.startsWith(prefix) || lowerDomain.includes(`.${prefix}`)) {
       return { 
         allowed: true, 
-        reason: `Matches allowed pattern: ${pattern}` 
+        reason: `Matches allowed prefix: ${prefix}` 
       };
     }
   }
   
+  // Check blocked domains
+  for (const blocked of BLOCKED_DOMAINS) {
+    if (lowerDomain === blocked || lowerDomain.endsWith(`.${blocked}`)) {
+      return { 
+        allowed: false, 
+        reason: `Production domain explicitly blocked: ${blocked}` 
+      };
+    }
+  }
+  
+  // Strict mode: block everything else
   return { 
-    allowed: true, 
-    reason: 'Not in blocked list' 
+    allowed: false, 
+    reason: 'Domain not in allowed list (strict mode)' 
   };
 }
+
+// Export for testing
+export { isDomainAllowed, getAllowedPrefixes };

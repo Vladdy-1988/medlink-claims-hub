@@ -11,6 +11,7 @@ import { db } from '../db';
 import { patients, providers, claims } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
 import type { Claim } from '../../shared/schema';
+import { safeFetch } from '../net/allowlist';
 
 interface TokenCache {
   accessToken: string;
@@ -168,7 +169,7 @@ export class TelusEClaimsConnector extends BaseConnector {
       // Placeholder for live implementation:
       const accessToken = await this.getAccessToken();
       
-      const response = await fetch(`${process.env.ECLAIMS_ENDPOINT}/claims`, {
+      const response = await safeFetch(`${process.env.ECLAIMS_ENDPOINT}/claims`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -254,7 +255,7 @@ export class TelusEClaimsConnector extends BaseConnector {
       // Placeholder for live implementation:
       const accessToken = await this.getAccessToken();
       
-      const response = await fetch(`${process.env.ECLAIMS_ENDPOINT}/claims/${externalId}/status`, {
+      const response = await safeFetch(`${process.env.ECLAIMS_ENDPOINT}/claims/${externalId}/status`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -302,7 +303,7 @@ export class TelusEClaimsConnector extends BaseConnector {
     
     // TODO: Implement actual OAuth token request
     /*
-    const response = await fetch(`${process.env.ECLAIMS_ENDPOINT}/oauth/token`, {
+    const response = await safeFetch(`${process.env.ECLAIMS_ENDPOINT}/oauth/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
