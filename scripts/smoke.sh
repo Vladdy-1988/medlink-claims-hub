@@ -17,6 +17,8 @@ BOLD='\033[1m'
 
 # Configuration
 BASE_URL="${1:-http://localhost:5000}"
+SMOKE_USER="${2:-${SMOKE_USER:-}}"
+SMOKE_PASS="${3:-${SMOKE_PASS:-}}"
 TIMEOUT=10
 VERBOSE="${VERBOSE:-false}"
 
@@ -122,6 +124,41 @@ http_test() {
     fi
 }
 
+# Function to perform login and get token
+auth_login() {
+    local user=$1
+    local pass=$2
+    
+    if [ -z "$user" ] || [ -z "$pass" ]; then
+        print_status "WARN" "No credentials provided, skipping authentication"
+        return 1
+    fi
+    
+    local response
+    response=$(curl -s -X POST \
+        "${BASE_URL}/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$user\",\"password\":\"$pass\"}" \
+        --connect-timeout $TIMEOUT)
+    
+    if [ $? -ne 0 ]; then
+        print_status "FAIL" "Login failed - connection error"
+        return 1
+    fi
+    
+    # Extract token from response
+    TOKEN=$(echo "$response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+    
+    if [ -z "$TOKEN" ]; then
+        print_status "FAIL" "Login failed - no token returned"
+        echo "Response: $response" >&2
+        return 1
+    fi
+    
+    print_status "PASS" "Authentication successful"
+    return 0
+}
+
 # Function to validate JSON field
 validate_json_field() {
     local json=$1
@@ -207,31 +244,103 @@ main() {
     # Test 3: Claims API
     print_status "INFO" "Test Suite: Claims API"
     
-    # Create a test claim
-    test_claim=$(generate_test_claim)
-    claim_response=$(http_test "POST" "/api/claims" "201" "$test_claim" "Create claim" 2>/dev/null) || {
-        print_status "WARN" "Claim creation failed - may require authentication"
-        claim_response=""
-    }
+    # Perform authentication first
+    if [ -n "$SMOKE_USER" ] && [ -n "$SMOKE_PASS" ]; then
+        auth_login "$SMOKE_USER" "$SMOKE_PASS"
+        AUTH_SUCCESS=$?
+    else
+        print_status "WARN" "No credentials provided, claims tests may fail"
+        AUTH_SUCCESS=1
+    fi
     
-    # If claim was created, try to retrieve it
+    # Test claim creation (with auth if available)
+    if [ $AUTH_SUCCESS -eq 0 ] && [ -n "$TOKEN" ]; then
+        # Authenticated request
+        claim_response=$(curl -s -X POST \
+            "${BASE_URL}/api/claims" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{
+                "patientId": "11111111-1111-1111-1111-111111111111",
+                "providerId": "22222222-2222-2222-2222-222222222222",
+                "insurerId": "33333333-3333-3333-3333-333333333333",
+                "type": "claim",
+                "serviceDate": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+                "amount": "150.00",
+                "status": "draft",
+                "notes": "Smoke test claim"
+            }' \
+            --connect-timeout $TIMEOUT)
+    else
+        # Unauthenticated request (fallback)
+        claim_response=$(curl -s -X POST \
+            "${BASE_URL}/api/claims" \
+            -H "Content-Type: application/json" \
+            -d '{
+                "patientId": "11111111-1111-1111-1111-111111111111",
+                "providerId": "22222222-2222-2222-2222-222222222222",
+                "insurerId": "33333333-3333-3333-3333-333333333333",
+                "type": "claim",
+                "serviceDate": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+                "amount": "150.00",
+                "status": "draft",
+                "notes": "Smoke test claim"
+            }' \
+            --connect-timeout $TIMEOUT)
+    fi
+    
+    # Check if claim was created successfully
     if [ -n "$claim_response" ] && [ "$claim_response" != "CURL_ERROR" ] && [ "$claim_response" != "" ]; then
-        claim_id=$(echo "$claim_response" | jq -r '.id' 2>/dev/null)
-        
-        if [ -n "$claim_id" ] && [ "$claim_id" != "null" ] && [ "$claim_id" != "" ]; then
-            http_test "GET" "/api/claims/$claim_id" "200" "" "Retrieve claim by ID" 2>/dev/null || true
+        http_status=$(echo "$claim_response" | jq -r '.status // empty' 2>/dev/null)
+        if [ -z "$http_status" ] || [ "$http_status" = "null" ]; then
+            # Valid claim response
+            print_status "PASS" "Create claim - Status: 201"
+            TEST_RESULTS+=("PASS|Create claim|201")
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            TESTS_TOTAL=$((TESTS_TOTAL + 1))
+            
+            claim_id=$(echo "$claim_response" | jq -r '.id' 2>/dev/null)
+            
+            if [ -n "$claim_id" ] && [ "$claim_id" != "null" ] && [ "$claim_id" != "" ]; then
+                # Retrieve claim by ID with auth if available
+                if [ -n "$TOKEN" ]; then
+                    claim_get_response=$(curl -s -X GET \
+                        "${BASE_URL}/api/claims/${claim_id}" \
+                        -H "Authorization: Bearer $TOKEN" \
+                        --connect-timeout $TIMEOUT)
+                else
+                    claim_get_response=$(curl -s -X GET \
+                        "${BASE_URL}/api/claims/${claim_id}" \
+                        --connect-timeout $TIMEOUT)
+                fi
+                
+                # Validate GET response
+                if [ -n "$claim_get_response" ] && echo "$claim_get_response" | jq -e '.id' >/dev/null 2>&1; then
+                    print_status "PASS" "Retrieve claim by ID - Status: 200"
+                    TEST_RESULTS+=("PASS|Retrieve claim by ID|200")
+                    TESTS_PASSED=$((TESTS_PASSED + 1))
+                    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+                else
+                    print_status "FAIL" "Retrieve claim by ID - Failed"
+                    TEST_RESULTS+=("FAIL|Retrieve claim by ID|Failed")
+                    TESTS_FAILED=$((TESTS_FAILED + 1))
+                    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+                fi
+            else
+                print_status "WARN" "Could not extract claim ID from response"
+            fi
         else
-            print_status "WARN" "Could not extract claim ID from response: $claim_id"
-            # Try to list claims instead
-            http_test "GET" "/api/claims" "200" "" "List claims" 2>/dev/null || {
-                print_status "WARN" "Claims listing failed - may require authentication"
-            }
+            # Error response
+            print_status "FAIL" "Create claim - Failed (may require authentication)"
+            TEST_RESULTS+=("FAIL|Create claim|Authentication required")
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            TESTS_TOTAL=$((TESTS_TOTAL + 1))
         fi
     else
-        # Try to list claims as a fallback test
-        http_test "GET" "/api/claims" "200" "" "List claims" || {
-            print_status "WARN" "Claims listing failed - may require authentication"
-        }
+        print_status "FAIL" "Create claim - Connection error"
+        TEST_RESULTS+=("FAIL|Create claim|Connection error")
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        TESTS_TOTAL=$((TESTS_TOTAL + 1))
     fi
     
     echo ""
