@@ -49,6 +49,7 @@ import {
   Cell
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
+import { DemoTour } from "@/components/DemoTour";
 
 interface InvestorMetrics {
   totalClaims: number;
@@ -202,6 +203,11 @@ export default function InvestorDashboard() {
             </p>
           </div>
 
+          {/* Smart Validation Placeholder */}
+          <div data-testid="smart-validation" style={{ display: 'none' }}>
+            Smart validation feature placeholder for tour
+          </div>
+          
           {/* Key Metrics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
             <motion.div
@@ -234,7 +240,7 @@ export default function InvestorDashboard() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2 }}
             >
-              <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-green-50 dark:from-slate-900 dark:to-green-900 overflow-hidden">
+              <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-green-50 dark:from-slate-900 dark:to-green-900 overflow-hidden" data-testid="kpi-total-value">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <DollarSign className="w-8 h-8 text-green-600" />
@@ -452,6 +458,7 @@ export default function InvestorDashboard() {
             <motion.div
               whileHover={{ scale: 1.05 }}
               className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20"
+              data-testid="compliance-badge"
             >
               <div className="flex items-center justify-center w-12 h-12 bg-white/20 rounded-lg mb-4">
                 <Shield className="w-6 h-6 text-white" />
@@ -515,7 +522,7 @@ export default function InvestorDashboard() {
       {/* Live Activity Feed */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="border-0 shadow-xl">
+          <Card className="border-0 shadow-xl" data-testid="recent-activity">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Live Activity Feed</CardTitle>
@@ -574,7 +581,7 @@ export default function InvestorDashboard() {
           </Card>
 
           {/* ROI Calculator */}
-          <Card className="border-0 shadow-xl">
+          <Card className="border-0 shadow-xl" data-testid="roi-calculator">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Calculator className="w-5 h-5 text-blue-600" />
@@ -637,7 +644,7 @@ export default function InvestorDashboard() {
           Explosive Growth Metrics
         </h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="border-0 shadow-xl">
+          <Card className="border-0 shadow-xl" data-testid="analytics-chart">
             <CardHeader>
               <CardTitle>Claims Processing Growth</CardTitle>
               <CardDescription>Month-over-month growth trajectory</CardDescription>
@@ -784,6 +791,9 @@ export default function InvestorDashboard() {
           </motion.div>
         </div>
       </div>
+      
+      {/* Demo Tour Component */}
+      <DemoTour autoStart={true} context="investor" />
     </div>
   );
 }

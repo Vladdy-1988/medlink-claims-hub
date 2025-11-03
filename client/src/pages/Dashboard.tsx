@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { DashboardKpis } from "@/components/DashboardKpis";
 import { ClaimsTable } from "@/components/ClaimsTable";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { DemoTour } from "@/components/DemoTour";
 import { Plus, CheckCircle, Upload } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Link } from "wouter";
@@ -251,6 +252,9 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    
+    {/* Demo Tour Component */}
+    <DemoTour autoStart={false} context="dashboard" />
     </>
   );
 }

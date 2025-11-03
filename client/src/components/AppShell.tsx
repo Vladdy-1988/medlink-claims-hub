@@ -14,7 +14,9 @@ import {
   Sun,
   Moon,
   User,
-  Target
+  Target,
+  PlayCircle,
+  Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,6 +138,21 @@ export function AppShell({ children }: AppShellProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Demo Tour Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                localStorage.removeItem('tourCompleted');
+                window.location.href = '/investor-dashboard?demo=true';
+              }}
+              className="hidden md:flex items-center gap-2"
+              data-testid="button-start-demo"
+            >
+              <Sparkles className="w-4 h-4 text-yellow-500" />
+              <span>Start Demo Tour</span>
+            </Button>
+            
             <Button
               variant="ghost"
               size="sm"
