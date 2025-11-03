@@ -7,12 +7,34 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { FileUpload } from "./FileUpload";
-import { ChevronLeft, ChevronRight, Check, Upload, User, FileText, Send } from "lucide-react";
+import { 
+  ChevronLeft, ChevronRight, Check, Upload, User, FileText, Send, 
+  Sparkles, AlertCircle, HelpCircle, Loader2 
+} from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { get, set, del } from "idb-keyval";
 import { useLocation } from "wouter";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface Patient {
   id: string;
@@ -75,6 +97,15 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
   const [procedureCode, setProcedureCode] = useState('');
   const [procedureDescription, setProcedureDescription] = useState('');
   const [procedureAmount, setProcedureAmount] = useState('');
+
+  // AI Assistant states
+  const [icd10Suggestions, setIcd10Suggestions] = useState<any[]>([]);
+  const [loadingIcd10, setLoadingIcd10] = useState(false);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [loadingValidation, setLoadingValidation] = useState(false);
+  const [showIcd10Dropdown, setShowIcd10Dropdown] = useState(false);
+  const [aiAssistLoading, setAiAssistLoading] = useState(false);
 
   // Load draft data from IndexedDB
   useEffect(() => {
@@ -217,6 +248,113 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
     submitMutation.mutate(claimData);
   };
 
+  // AI Assistant functions
+  const fetchICD10Suggestions = async (diagnosis: string) => {
+    if (!diagnosis || diagnosis.length < 3) {
+      setIcd10Suggestions([]);
+      setShowIcd10Dropdown(false);
+      return;
+    }
+
+    setLoadingIcd10(true);
+    setShowIcd10Dropdown(true);
+    
+    try {
+      const response = await apiRequest('/api/ai/suggest-codes', 'POST', {
+        diagnosis,
+      });
+      
+      if (response.suggestions && Array.isArray(response.suggestions)) {
+        setIcd10Suggestions(response.suggestions);
+      } else {
+        setIcd10Suggestions([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch ICD-10 suggestions:', error);
+      setIcd10Suggestions([]);
+    } finally {
+      setLoadingIcd10(false);
+    }
+  };
+
+  const validateClaimWithAI = async () => {
+    setLoadingValidation(true);
+    setValidationWarnings([]);
+    setValidationErrors([]);
+
+    try {
+      const response = await apiRequest('/api/ai/validate-claim', 'POST', {
+        claimData,
+      });
+
+      if (response.warnings && response.warnings.length > 0) {
+        setValidationWarnings(response.warnings);
+      }
+      if (response.errors && response.errors.length > 0) {
+        setValidationErrors(response.errors);
+      }
+
+      if (response.errors.length === 0 && response.warnings.length === 0) {
+        toast({
+          title: "Validation Passed",
+          description: "Your claim looks good! No issues detected.",
+        });
+      }
+    } catch (error) {
+      console.error('Failed to validate claim:', error);
+      toast({
+        title: "Validation Unavailable",
+        description: "AI validation is currently unavailable. Please proceed with manual review.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingValidation(false);
+    }
+  };
+
+  const getFieldSuggestions = async (fieldName: string) => {
+    setAiAssistLoading(true);
+    
+    try {
+      const response = await apiRequest('/api/ai/auto-complete', 'POST', {
+        fieldName,
+        context: {
+          patientId: claimData.patientId,
+          providerId: claimData.providerId,
+          insurerId: claimData.insurerId,
+          type: claimData.type,
+        },
+      });
+
+      if (response.suggestions && response.suggestions.length > 0) {
+        toast({
+          title: "AI Suggestions",
+          description: (
+            <div>
+              <p>Here are some suggestions for {fieldName}:</p>
+              <ul className="list-disc pl-5 mt-2">
+                {response.suggestions.slice(0, 3).map((suggestion: string, index: number) => (
+                  <li key={index}>{suggestion}</li>
+                ))}
+              </ul>
+            </div>
+          ),
+        });
+      }
+    } catch (error) {
+      console.error('Failed to get field suggestions:', error);
+    } finally {
+      setAiAssistLoading(false);
+    }
+  };
+
+  const selectIcd10Code = (code: any) => {
+    setProcedureCode(code.code);
+    setProcedureDescription(code.description);
+    setShowIcd10Dropdown(false);
+    setIcd10Suggestions([]);
+  };
+
   const steps = [
     { number: 1, title: "Patient & Provider", icon: User },
     { number: 2, title: "Services & Codes", icon: FileText },
@@ -336,10 +474,88 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
           {/* Step 2: Services & Codes */}
           {currentStep === 2 && (
             <div className="space-y-6">
+              {/* AI Validation */}
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-muted-foreground">
+                  AI assistance can help you with ICD-10 codes and validation
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={validateClaimWithAI}
+                  disabled={loadingValidation}
+                  className="gap-2"
+                  data-testid="button-ai-validate"
+                >
+                  {loadingValidation ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Validate Claim
+                </Button>
+              </div>
+
+              {/* Validation Warnings/Errors */}
+              {(validationWarnings.length > 0 || validationErrors.length > 0) && (
+                <div className="space-y-2">
+                  {validationErrors.length > 0 && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        <div className="font-medium mb-1">Errors found:</div>
+                        <ul className="list-disc pl-4">
+                          {validationErrors.map((error, index) => (
+                            <li key={index}>{error}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {validationWarnings.length > 0 && (
+                    <Alert>
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        <div className="font-medium mb-1">Warnings:</div>
+                        <ul className="list-disc pl-4">
+                          {validationWarnings.map((warning, index) => (
+                            <li key={index}>{warning}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              )}
+
               {/* Add Procedure Code */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900">
                 <div className="space-y-2">
-                  <Label htmlFor="code">Procedure Code *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="code">Procedure Code *</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => getFieldSuggestions('procedure')}
+                            disabled={aiAssistLoading}
+                            data-testid="button-ai-assist-procedure"
+                          >
+                            {aiAssistLoading ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Get AI suggestions for procedure codes</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Input
                     id="code"
                     value={procedureCode}
@@ -348,15 +564,64 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
                     data-testid="input-procedure-code"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
+                <div className="space-y-2 relative">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="description">Description/Diagnosis</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Type a diagnosis to see ICD-10 code suggestions</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <Input
                     id="description"
                     value={procedureDescription}
-                    onChange={(e) => setProcedureDescription(e.target.value)}
-                    placeholder="e.g., Comprehensive exam"
+                    onChange={(e) => {
+                      setProcedureDescription(e.target.value);
+                      fetchICD10Suggestions(e.target.value);
+                    }}
+                    placeholder="e.g., Upper respiratory infection"
                     data-testid="input-procedure-description"
                   />
+                  {/* ICD-10 Dropdown */}
+                  {showIcd10Dropdown && (
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border rounded-md shadow-lg max-h-60 overflow-auto">
+                      {loadingIcd10 ? (
+                        <div className="p-3 text-center">
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                          <span className="text-sm text-muted-foreground">Loading suggestions...</span>
+                        </div>
+                      ) : icd10Suggestions.length > 0 ? (
+                        <div className="py-1">
+                          {icd10Suggestions.map((suggestion, index) => (
+                            <button
+                              key={index}
+                              className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              onClick={() => selectIcd10Code(suggestion)}
+                              data-testid={`icd10-suggestion-${index}`}
+                            >
+                              <div className="font-mono text-sm font-medium">{suggestion.code}</div>
+                              <div className="text-xs text-muted-foreground">{suggestion.description}</div>
+                              {suggestion.confidence && (
+                                <div className="text-xs text-blue-600 dark:text-blue-400">
+                                  Confidence: {(suggestion.confidence * 100).toFixed(0)}%
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3 text-center text-sm text-muted-foreground">
+                          No suggestions found
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="amount">Amount *</Label>

@@ -12,6 +12,7 @@ import {
   connectorConfigs,
   connectorTransactions,
   connectorErrors,
+  aiAssistUsage,
   type User,
   type UpsertUser,
   type Organization,
@@ -26,6 +27,7 @@ import {
   type ConnectorConfig,
   type ConnectorTransaction,
   type ConnectorError,
+  type AiAssistUsage,
   type InsertUser,
   type InsertOrganization,
   type InsertPatient,
@@ -37,6 +39,7 @@ import {
   type InsertConnectorConfig,
   type InsertConnectorTransaction,
   type InsertConnectorError,
+  type InsertAiAssistUsage,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sql } from "drizzle-orm";
@@ -121,6 +124,15 @@ export interface IStorage {
     mfaBackupCodes: string[] | null;
     mfaEnforcedAt: Date | null;
   } | undefined>;
+
+  // AI Assistant operations
+  trackAiUsage(usage: any): Promise<void>;
+  getAiUsageStats(orgId: string): Promise<{
+    totalUsage: number;
+    byFeature: Record<string, number>;
+    tokensUsed: number;
+    helpfulPercentage: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -558,6 +570,64 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(providers.name));
     
     return results.map(provider => decryptRecord('providers', provider));
+  }
+
+  // AI Assistant operations
+  async trackAiUsage(usage: any): Promise<void> {
+    try {
+      await db.insert(aiAssistUsage).values({
+        userId: usage.userId,
+        orgId: usage.orgId,
+        featureType: usage.featureType,
+        tokensUsed: usage.tokensUsed || 0,
+        helpful: usage.helpful,
+        context: usage.context,
+        responseTime: usage.responseTime,
+      });
+    } catch (error) {
+      console.error('Failed to track AI usage:', error);
+    }
+  }
+
+  async getAiUsageStats(orgId: string): Promise<{
+    totalUsage: number;
+    byFeature: Record<string, number>;
+    tokensUsed: number;
+    helpfulPercentage: number;
+  }> {
+    try {
+      const usage = await db
+        .select()
+        .from(aiAssistUsage)
+        .where(eq(aiAssistUsage.orgId, orgId));
+
+      const totalUsage = usage.length;
+      const tokensUsed = usage.reduce((sum, u) => sum + (u.tokensUsed || 0), 0);
+      
+      const byFeature: Record<string, number> = {};
+      usage.forEach(u => {
+        byFeature[u.featureType] = (byFeature[u.featureType] || 0) + 1;
+      });
+
+      const helpfulCount = usage.filter(u => u.helpful === true).length;
+      const ratedCount = usage.filter(u => u.helpful !== null).length;
+      const helpfulPercentage = ratedCount > 0 ? (helpfulCount / ratedCount) * 100 : 0;
+
+      return {
+        totalUsage,
+        byFeature,
+        tokensUsed,
+        helpfulPercentage,
+      };
+    } catch (error) {
+      console.error('Failed to get AI usage stats:', error);
+      return {
+        totalUsage: 0,
+        byFeature: {},
+        tokensUsed: 0,
+        helpfulPercentage: 0,
+      };
+    }
   }
 }
 

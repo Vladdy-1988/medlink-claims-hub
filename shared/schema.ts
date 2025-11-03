@@ -250,6 +250,27 @@ export const connectorErrors = pgTable("connector_errors", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// AI Assistant Usage Tracking
+export const aiFeatureTypeEnum = pgEnum("ai_feature_type", [
+  "document_analysis",
+  "code_suggestion", 
+  "claim_validation",
+  "auto_complete"
+]);
+
+export const aiAssistUsage = pgTable("ai_assist_usage", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  orgId: uuid("org_id").references(() => organizations.id).notNull(),
+  featureType: aiFeatureTypeEnum("feature_type").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  tokensUsed: integer("tokens_used").notNull().default(0),
+  helpful: boolean("helpful"), // User feedback on whether it was helpful
+  context: jsonb("context"), // Additional context about the usage
+  responseTime: integer("response_time_ms"), // Response time in milliseconds
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -322,6 +343,12 @@ export const insertConnectorErrorSchema = createInsertSchema(connectorErrors).om
   createdAt: true,
 });
 
+export const insertAiAssistUsageSchema = createInsertSchema(aiAssistUsage).omit({
+  id: true,
+  timestamp: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -355,3 +382,7 @@ export type ConnectorTransaction = typeof connectorTransactions.$inferSelect;
 export type InsertConnectorTransaction = z.infer<typeof insertConnectorTransactionSchema>;
 export type ConnectorError = typeof connectorErrors.$inferSelect;
 export type InsertConnectorError = z.infer<typeof insertConnectorErrorSchema>;
+
+// AI Assistant Types
+export type AiAssistUsage = typeof aiAssistUsage.$inferSelect;
+export type InsertAiAssistUsage = z.infer<typeof insertAiAssistUsageSchema>;
