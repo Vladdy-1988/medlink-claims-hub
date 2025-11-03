@@ -13,7 +13,8 @@ import {
   Search,
   Sun,
   Moon,
-  User
+  User,
+  Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { icon: FileCheck2, label: "Remittances", href: "/remittances" },
   { icon: Settings, label: "Settings", href: "/settings" },
   { icon: ShieldCheck, label: "Admin", href: "/admin", adminOnly: true },
+  { icon: Target, label: "Investor Preview 🎯", href: "/investor-dashboard" },
 ];
 
 export function AppShell({ children }: AppShellProps) {

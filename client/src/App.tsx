@@ -21,6 +21,7 @@ import Remittances from "@/pages/Remittances";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
 import Coverage from "@/pages/Coverage";
+import InvestorDashboard from "@/pages/InvestorDashboard";
 
 function Router() {
   // DEVELOPMENT MODE - NO AUTHENTICATION NEEDED
@@ -40,6 +41,7 @@ function Router() {
           <Route path="/settings" component={Settings} />
           <Route path="/admin" component={Admin} />
           <Route path="/admin/coverage" component={Coverage} />
+          <Route path="/investor-dashboard" component={InvestorDashboard} />
         </AppShell>
         <Route component={NotFound} />
         <InstallPrompt />
@@ -89,6 +91,7 @@ function Router() {
         <Route path="/settings" component={Settings} />
         <Route path="/admin" component={Admin} />
         <Route path="/admin/coverage" component={Coverage} />
+        <Route path="/investor-dashboard" component={InvestorDashboard} />
       </AppShell>
       <Route component={NotFound} />
       <InstallPrompt />
