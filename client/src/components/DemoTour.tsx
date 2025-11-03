@@ -408,55 +408,59 @@ export function DemoTour({ autoStart = false, onFinish, context = 'general' }: D
       />
       
       {/* Add custom styles for pulse animations */}
-      <style jsx global>{`
-        .demo-tour-active [data-testid="kpi-total-value"],
-        .demo-tour-active [data-testid="button-new-claim"],
-        .demo-tour-active [data-testid="smart-validation"],
-        .demo-tour-active [data-testid="recent-activity"],
-        .demo-tour-active [data-testid="analytics-chart"],
-        .demo-tour-active [data-testid="compliance-badge"],
-        .demo-tour-active [data-testid="roi-calculator"] {
-          animation: pulse-highlight 2s ease-in-out infinite;
-        }
-        
-        @keyframes pulse-highlight {
-          0%, 100% {
-            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
-          }
-          50% {
-            box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.1);
-          }
-        }
-        
-        .react-joyride__spotlight {
-          border-radius: 8px;
-        }
-        
-        .react-joyride__progress {
-          background-color: #e2e8f0 !important;
-          height: 4px !important;
-        }
-        
-        .react-joyride__progress-bar {
-          background: linear-gradient(90deg, #3b82f6, #8b5cf6) !important;
-          height: 4px !important;
-        }
-        
-        .react-joyride__tooltip {
-          animation: slideIn 0.3s ease-out;
-        }
-        
-        @keyframes slideIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            .demo-tour-active [data-testid="kpi-total-value"],
+            .demo-tour-active [data-testid="button-new-claim"],
+            .demo-tour-active [data-testid="smart-validation"],
+            .demo-tour-active [data-testid="recent-activity"],
+            .demo-tour-active [data-testid="analytics-chart"],
+            .demo-tour-active [data-testid="compliance-badge"],
+            .demo-tour-active [data-testid="roi-calculator"] {
+              animation: pulse-highlight 2s ease-in-out infinite;
+            }
+            
+            @keyframes pulse-highlight {
+              0%, 100% {
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+              }
+              50% {
+                box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.1);
+              }
+            }
+            
+            .react-joyride__spotlight {
+              border-radius: 8px;
+            }
+            
+            .react-joyride__progress {
+              background-color: #e2e8f0 !important;
+              height: 4px !important;
+            }
+            
+            .react-joyride__progress-bar {
+              background: linear-gradient(90deg, #3b82f6, #8b5cf6) !important;
+              height: 4px !important;
+            }
+            
+            .react-joyride__tooltip {
+              animation: slideIn 0.3s ease-out;
+            }
+            
+            @keyframes slideIn {
+              from {
+                opacity: 0;
+                transform: translateY(10px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+          `,
+        }}
+      />
     </>
   );
 }
