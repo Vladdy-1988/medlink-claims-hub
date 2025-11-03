@@ -82,11 +82,6 @@ const tourStyles: Styles = {
     padding: 8,
     color: '#64748b',
   },
-  floater: {
-    arrow: {
-      padding: 0,
-    },
-  },
   overlay: {
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     mixBlendMode: 'normal',
