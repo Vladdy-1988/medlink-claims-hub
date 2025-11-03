@@ -425,25 +425,31 @@ export default function InvestorDashboard() {
             <CardDescription>Current state of healthcare claims digitization in Canada</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={(entry) => `${entry.name}: ${entry.value}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {pieData && pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={(entry) => `${entry.name}: ${entry.value}%`}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-slate-500">
+                No data available
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -650,27 +656,33 @@ export default function InvestorDashboard() {
               <CardDescription>Month-over-month growth trajectory</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={growthData}>
-                  <defs>
-                    <linearGradient id="colorClaims" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip />
-                  <Area 
-                    type="monotone" 
-                    dataKey="claims" 
-                    stroke="#3b82f6" 
-                    fillOpacity={1} 
-                    fill="url(#colorClaims)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {growthData && growthData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={growthData}>
+                    <defs>
+                      <linearGradient id="colorClaims" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip />
+                    <Area 
+                      type="monotone" 
+                      dataKey="claims" 
+                      stroke="#3b82f6" 
+                      fillOpacity={1} 
+                      fill="url(#colorClaims)" 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-slate-500">
+                  No data available
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -680,21 +692,27 @@ export default function InvestorDashboard() {
               <CardDescription>Healthcare providers joining the platform</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={growthData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line 
-                    type="monotone" 
-                    dataKey="providers" 
-                    stroke="#10b981" 
-                    strokeWidth={3}
-                    dot={{ fill: '#10b981' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {growthData && growthData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <RechartsLineChart data={growthData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line 
+                      type="monotone" 
+                      dataKey="providers" 
+                      stroke="#10b981" 
+                      strokeWidth={3}
+                      dot={{ fill: '#10b981' }}
+                    />
+                  </RechartsLineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-slate-500">
+                  No data available
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -704,15 +722,21 @@ export default function InvestorDashboard() {
               <CardDescription>Total claims value processed per month</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={growthData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  <Bar dataKey="revenue" fill="#8b5cf6" />
-                </BarChart>
-              </ResponsiveContainer>
+              {growthData && growthData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={growthData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                    <Bar dataKey="revenue" fill="#8b5cf6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-slate-500">
+                  No data available
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -722,21 +746,27 @@ export default function InvestorDashboard() {
               <CardDescription>Average days to process claims</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={growthData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line 
-                    type="monotone" 
-                    dataKey="processingTime" 
-                    stroke="#ef4444" 
-                    strokeWidth={3}
-                    dot={{ fill: '#ef4444' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {growthData && growthData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <RechartsLineChart data={growthData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line 
+                      type="monotone" 
+                      dataKey="processingTime" 
+                      stroke="#ef4444" 
+                      strokeWidth={3}
+                      dot={{ fill: '#ef4444' }}
+                    />
+                  </RechartsLineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-slate-500">
+                  No data available
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
