@@ -117,13 +117,16 @@ export default function InvestorDashboard() {
   });
 
   // Auto-refresh activity feed
-  useQuery({
+  const { data: activityData } = useQuery({
     queryKey: ["/api/investor/activity"],
     refetchInterval: 5000, // Refresh every 5 seconds
-    onSuccess: (data: any) => {
-      setActivityFeed(data || []);
-    }
   });
+  
+  useEffect(() => {
+    if (activityData) {
+      setActivityFeed(activityData || []);
+    }
+  }, [activityData]);
 
   // Animate number counting effect
   useEffect(() => {
@@ -619,7 +622,7 @@ export default function InvestorDashboard() {
                       <div className="w-32 bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
                         <div 
                           className="h-full bg-gradient-to-r from-purple-500 to-purple-600"
-                          style={{ width: `${(count / metrics.aiMetrics.totalAiAssists) * 100}%` }}
+                          style={{ width: `${(count / (metrics.aiMetrics?.totalAiAssists || 1)) * 100}%` }}
                         />
                       </div>
                       <span className="text-sm text-slate-600 dark:text-slate-400 w-16 text-right">{count}</span>

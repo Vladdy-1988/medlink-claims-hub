@@ -318,9 +318,9 @@ export class AIClaimsAssistant {
    */
   private checkPreAuthRequirements(codes: any[]): { required: boolean; message: string } {
     for (const code of codes) {
-      const codeStr = code.code || code;
-      if (PREAUTH_REQUIRED[codeStr]) {
-        const requirement = PREAUTH_REQUIRED[codeStr];
+      const codeStr = String(code.code || code);
+      if (codeStr in PREAUTH_REQUIRED) {
+        const requirement = PREAUTH_REQUIRED[codeStr as keyof typeof PREAUTH_REQUIRED];
         return {
           required: true,
           message: `Pre-authorization may be required for ${requirement.procedure}: ${requirement.reason}`

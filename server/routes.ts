@@ -410,7 +410,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/auth/user', authLimiter, async (req: any, res) => {
     // Development mode bypass for Replit preview
     if (process.env.NODE_ENV === 'development' && !req.isAuthenticated()) {
-      // Create a development user
+      // Get or create demo organization
+      let demoOrg = await storage.getOrganizationByExternalId('demo-org');
+      if (!demoOrg) {
+        // Create demo organization if it doesn't exist
+        demoOrg = await storage.createOrganization({
+          name: 'Demo Medical Clinic',
+          externalId: 'demo-org',
+          province: 'ON',
+          preferredLanguage: 'en-CA',
+          privacyOfficerName: 'Dr. Jane Smith',
+          privacyOfficerEmail: 'privacy@democlinic.ca',
+          dataRetentionDays: 2555,
+          privacyContactUrl: 'https://democlinic.ca/privacy',
+          minimizeLogging: true
+        });
+      }
+      
+      // Create a development user with organization
       const devUser = await storage.upsertUser({
         id: 'dev-user-001',
         email: 'dev@medlinkclaims.com',
@@ -418,6 +435,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName: 'User',
         profileImageUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=dev',
         role: 'admin' as const,
+        orgId: demoOrg.id,
       });
       return res.json(devUser);
     }
@@ -1148,6 +1166,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/claims/:id', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
     try {
+      // Check if the ID is "new" - return empty claim structure for new claim creation
+      if (req.params.id === 'new') {
+        const user = await storage.getUser(req.user.claims.sub);
+        if (!user?.orgId) {
+          return res.status(400).json({ message: "User not associated with organization" });
+        }
+        
+        // Return an empty claim structure for the "new" case
+        return res.json({
+          id: 'new',
+          patientId: '',
+          providerId: '',
+          insurerId: '',
+          type: 'claim',
+          amount: 0,
+          codes: [],
+          notes: '',
+          status: 'draft',
+          attachments: []
+        });
+      }
+      
+      // Otherwise, treat it as a regular claim ID
       const claim = await storage.getClaim(req.params.id);
       if (!claim) {
         return res.status(404).json({ message: "Claim not found" });

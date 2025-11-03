@@ -264,8 +264,10 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
         diagnosis,
       });
       
-      if (response.suggestions && Array.isArray(response.suggestions)) {
-        setIcd10Suggestions(response.suggestions);
+      const data = await response.json();
+      
+      if (data.suggestions && Array.isArray(data.suggestions)) {
+        setIcd10Suggestions(data.suggestions);
       } else {
         setIcd10Suggestions([]);
       }
@@ -286,15 +288,17 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
       const response = await apiRequest('/api/ai/validate-claim', 'POST', {
         claimData,
       });
+      
+      const data = await response.json();
 
-      if (response.warnings && response.warnings.length > 0) {
-        setValidationWarnings(response.warnings);
+      if (data.warnings && data.warnings.length > 0) {
+        setValidationWarnings(data.warnings);
       }
-      if (response.errors && response.errors.length > 0) {
-        setValidationErrors(response.errors);
+      if (data.errors && data.errors.length > 0) {
+        setValidationErrors(data.errors);
       }
 
-      if (response.errors.length === 0 && response.warnings.length === 0) {
+      if ((!data.errors || data.errors.length === 0) && (!data.warnings || data.warnings.length === 0)) {
         toast({
           title: "Validation Passed",
           description: "Your claim looks good! No issues detected.",
@@ -326,14 +330,16 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
         },
       });
 
-      if (response.suggestions && response.suggestions.length > 0) {
+      const data = await response.json();
+
+      if (data.suggestions && data.suggestions.length > 0) {
         toast({
           title: "AI Suggestions",
           description: (
             <div>
               <p>Here are some suggestions for {fieldName}:</p>
               <ul className="list-disc pl-5 mt-2">
-                {response.suggestions.slice(0, 3).map((suggestion: string, index: number) => (
+                {data.suggestions.slice(0, 3).map((suggestion: string, index: number) => (
                   <li key={index}>{suggestion}</li>
                 ))}
               </ul>
