@@ -180,6 +180,23 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
+    // In production, add a middleware to skip static serving for API routes
+    app.use((req, res, next) => {
+      // Skip static file serving for API and other JSON endpoints
+      if (req.path.startsWith('/api/') || 
+          req.path === '/healthz' || 
+          req.path === '/readyz' || 
+          req.path === '/metrics' ||
+          req.path.startsWith('/auth/') ||
+          req.path.startsWith('/upload/')) {
+        // Let these requests pass through to the API routes registered earlier
+        return next('route');
+      }
+      // For all other requests, continue to static file serving
+      next();
+    });
+    
+    // Now serve static files for non-API routes
     serveStatic(app);
   }
 
