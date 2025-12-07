@@ -54,6 +54,14 @@ function isDomainAllowed(hostname: string): boolean {
     return true;
   }
 
+  // Always allow Replit domains (needed for OAuth/OIDC authentication)
+  const lowerHost = hostname.toLowerCase();
+  if (lowerHost === 'replit.com' || lowerHost.endsWith('.replit.com') ||
+      lowerHost === 'replit.dev' || lowerHost.endsWith('.replit.dev') ||
+      lowerHost === 'repl.co' || lowerHost.endsWith('.repl.co')) {
+    return true;
+  }
+
   // Check against allowed prefixes from environment
   const allowedPrefixes = getAllowedPrefixes();
   const lowerHostname = hostname.toLowerCase();
@@ -283,10 +291,17 @@ export function testDomain(domain: string): { allowed: boolean; reason: string }
       domain.startsWith('localhost:') || domain.startsWith('127.0.0.1:')) {
     return { allowed: true, reason: 'Localhost is always allowed' };
   }
+
+  // Check Replit domains (needed for OAuth/OIDC)
+  const lowerDomain = domain.toLowerCase();
+  if (lowerDomain === 'replit.com' || lowerDomain.endsWith('.replit.com') ||
+      lowerDomain === 'replit.dev' || lowerDomain.endsWith('.replit.dev') ||
+      lowerDomain === 'repl.co' || lowerDomain.endsWith('.repl.co')) {
+    return { allowed: true, reason: 'Replit domain always allowed for auth' };
+  }
   
   // Check allowed prefixes
   const allowedPrefixes = getAllowedPrefixes();
-  const lowerDomain = domain.toLowerCase();
   
   for (const prefix of allowedPrefixes) {
     if (lowerDomain.startsWith(prefix) || lowerDomain.includes(`.${prefix}`)) {
