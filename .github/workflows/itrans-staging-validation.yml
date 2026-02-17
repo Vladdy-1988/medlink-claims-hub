@@ -38,6 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ vars.ITRANS_CORE_REPO || 'Vladdy-1988/modern-itrans-core' }}
+          token: ${{ secrets.ITRANS_CORE_READ_TOKEN || github.token }}
           path: modern-itrans-core
 
       - name: Setup Node.js

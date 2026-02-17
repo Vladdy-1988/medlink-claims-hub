@@ -102,8 +102,9 @@ SERVICE_URL=https://myapp.com ./scripts/uptime.sh
 
 ## Setup Requirements
 
-1. **GitHub Secrets** (optional but recommended):
-   - `DATABASE_URL`: PostgreSQL connection string for deployment tests
+1. **GitHub Secrets**:
+   - `ITRANS_CORE_READ_TOKEN`: Required when `modern-itrans-core` is private. Use a fine-grained PAT with `Contents: Read` access to that repo.
+   - `DATABASE_URL`: PostgreSQL connection string for deployment tests (optional for workflows that define their own service DB URL).
    - `SEMGREP_APP_TOKEN`: Token for Semgrep security scanning (optional)
 
 2. **Branch Protection** (recommended):
