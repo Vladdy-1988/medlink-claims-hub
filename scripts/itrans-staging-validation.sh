@@ -14,6 +14,12 @@ LOAD_DURATION="${LOAD_DURATION:-5m}"
 SOAK_DURATION="${SOAK_DURATION:-30m}"
 LOAD_TARGET_VUS="${LOAD_TARGET_VUS:-100}"
 SOAK_VUS="${SOAK_VUS:-50}"
+SLO_P95_MAX_MS="${SLO_P95_MAX_MS:-400}"
+SLO_P99_MAX_MS="${SLO_P99_MAX_MS:-1000}"
+SLO_ERROR_RATE_MAX="${SLO_ERROR_RATE_MAX:-0.01}"
+SLO_CHECK_RATE_MIN="${SLO_CHECK_RATE_MIN:-0.95}"
+SLO_MIN_REQUESTS_LOAD="${SLO_MIN_REQUESTS_LOAD:-200}"
+SLO_MIN_REQUESTS_SOAK="${SLO_MIN_REQUESTS_SOAK:-500}"
 
 mkdir -p "$ARTIFACT_DIR"
 
@@ -31,6 +37,8 @@ failure_injection_status="skipped"
 load_status="skipped"
 soak_status="skipped"
 overall_status="pass"
+load_gate_file="$ARTIFACT_DIR/k6-load-gate.json"
+soak_gate_file="$ARTIFACT_DIR/k6-soak-gate.json"
 
 echo "[validation] artifacts: $ARTIFACT_DIR"
 
@@ -87,7 +95,23 @@ if [[ "$RUN_LOAD_TESTS" == "true" ]]; then
       -e K6_LOAD_HOLD_DURATION="$LOAD_DURATION" \
       -e K6_LOAD_TARGET_VUS="$LOAD_TARGET_VUS"
   ) >"$ARTIFACT_DIR/load-test.log" 2>&1; then
-    load_status="pass"
+    if (
+      cd "$MEDLINK_DIR"
+      node scripts/validate-k6-summary.mjs \
+        --summary "$ARTIFACT_DIR/k6-load-summary.json" \
+        --out "$load_gate_file" \
+        --gate load \
+        --min-requests "$SLO_MIN_REQUESTS_LOAD" \
+        --p95-max-ms "$SLO_P95_MAX_MS" \
+        --p99-max-ms "$SLO_P99_MAX_MS" \
+        --error-rate-max "$SLO_ERROR_RATE_MAX" \
+        --check-rate-min "$SLO_CHECK_RATE_MIN"
+    ) >"$ARTIFACT_DIR/load-slo-gate.log" 2>&1; then
+      load_status="pass"
+    else
+      load_status="fail"
+      overall_status="fail"
+    fi
   else
     load_status="fail"
     overall_status="fail"
@@ -108,7 +132,23 @@ if [[ "$RUN_LOAD_TESTS" == "true" ]]; then
       -e K6_SOAK_DURATION="$SOAK_DURATION" \
       -e K6_SOAK_VUS="$SOAK_VUS"
   ) >"$ARTIFACT_DIR/soak-test.log" 2>&1; then
-    soak_status="pass"
+    if (
+      cd "$MEDLINK_DIR"
+      node scripts/validate-k6-summary.mjs \
+        --summary "$ARTIFACT_DIR/k6-soak-summary.json" \
+        --out "$soak_gate_file" \
+        --gate soak \
+        --min-requests "$SLO_MIN_REQUESTS_SOAK" \
+        --p95-max-ms "$SLO_P95_MAX_MS" \
+        --p99-max-ms "$SLO_P99_MAX_MS" \
+        --error-rate-max "$SLO_ERROR_RATE_MAX" \
+        --check-rate-min "$SLO_CHECK_RATE_MIN"
+    ) >"$ARTIFACT_DIR/soak-slo-gate.log" 2>&1; then
+      soak_status="pass"
+    else
+      soak_status="fail"
+      overall_status="fail"
+    fi
   else
     soak_status="fail"
     overall_status="fail"
@@ -128,6 +168,16 @@ cat > "$SUMMARY_FILE" <<EOF
     "failureInjection": "${failure_injection_status}",
     "load": "${load_status}",
     "soak": "${soak_status}"
+  },
+  "slo": {
+    "p95MaxMs": ${SLO_P95_MAX_MS},
+    "p99MaxMs": ${SLO_P99_MAX_MS},
+    "errorRateMax": ${SLO_ERROR_RATE_MAX},
+    "checkRateMin": ${SLO_CHECK_RATE_MIN},
+    "minRequestsLoad": ${SLO_MIN_REQUESTS_LOAD},
+    "minRequestsSoak": ${SLO_MIN_REQUESTS_SOAK},
+    "loadGateFile": "${load_gate_file}",
+    "soakGateFile": "${soak_gate_file}"
   },
   "artifacts": "${ARTIFACT_DIR}"
 }

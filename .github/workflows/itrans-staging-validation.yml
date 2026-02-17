@@ -119,6 +119,26 @@ jobs:
               console.error(`Load/soak gates failed: load=${gates.load}, soak=${gates.soak}`);
               process.exit(1);
             }
+
+            const slo = summary.slo || {};
+            const loadGatePath = slo.loadGateFile;
+            const soakGatePath = slo.soakGateFile;
+            if (!loadGatePath || !soakGatePath) {
+              console.error('Missing SLO gate file paths in summary.slo');
+              process.exit(1);
+            }
+
+            if (!fs.existsSync(loadGatePath) || !fs.existsSync(soakGatePath)) {
+              console.error(`SLO gate file missing: load=${loadGatePath}, soak=${soakGatePath}`);
+              process.exit(1);
+            }
+
+            const loadGate = JSON.parse(fs.readFileSync(loadGatePath, 'utf8'));
+            const soakGate = JSON.parse(fs.readFileSync(soakGatePath, 'utf8'));
+            if (loadGate.pass !== true || soakGate.pass !== true) {
+              console.error(`SLO gate failed: load.pass=${loadGate.pass}, soak.pass=${soakGate.pass}`);
+              process.exit(1);
+            }
           } else {
             if (!['pass', 'skipped'].includes(gates.load) || !['pass', 'skipped'].includes(gates.soak)) {
               console.error(`Unexpected load/soak gate values: load=${gates.load}, soak=${gates.soak}`);

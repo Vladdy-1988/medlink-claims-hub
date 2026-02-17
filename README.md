@@ -162,6 +162,18 @@ Optional load/soak tuning vars:
 - `LOAD_TARGET_VUS` (default `100`)
 - `SOAK_VUS` (default `50`)
 
+SLO gate tuning vars for load/soak validation:
+- `SLO_P95_MAX_MS` (default `400`)
+- `SLO_P99_MAX_MS` (default `1000`)
+- `SLO_ERROR_RATE_MAX` (default `0.01`)
+- `SLO_CHECK_RATE_MIN` (default `0.95`)
+- `SLO_MIN_REQUESTS_LOAD` (default `200`)
+- `SLO_MIN_REQUESTS_SOAK` (default `500`)
+
+When load tests are enabled, the staging validation artifacts include:
+- `k6-load-summary.json` and `k6-soak-summary.json`
+- `k6-load-gate.json` and `k6-soak-gate.json` (explicit SLO gate evaluation outputs)
+
 ## Development Setup
 
 1. **Install Dependencies**:
