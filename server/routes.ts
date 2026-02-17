@@ -254,7 +254,7 @@ function secureCompareHex(a: string, b: string): boolean {
 }
 
 function isItransClaimsMutation(method: "GET" | "POST", path: string): boolean {
-  return method === "POST" && path.startsWith('/claims');
+  return path.startsWith('/claims');
 }
 
 function isItransWorkflowCall(path: string): boolean {
