@@ -73,6 +73,7 @@ jobs:
           RUN_FAILURE_INJECTION_TESTS: true
           RUN_LOAD_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_load_tests == 'true' && 'true' || 'false' }}
           STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          LOAD_TARGET_VUS: 50
         run: bash scripts/itrans-staging-validation.sh
 
       - name: Show staging summary

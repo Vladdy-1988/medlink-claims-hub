@@ -1,6 +1,8 @@
 // SLO (Service Level Objectives) and Performance Thresholds for MedLink Claims Hub
 
 export function applyThresholds() {
+  const status429RateMax = Number.parseFloat(__ENV.K6_STATUS_429_RATE_MAX || '0.01');
+
   return {
     // === CRITICAL SLOs ===
     
@@ -113,8 +115,8 @@ export function applyThresholds() {
     'http_req_waiting': ['p(95)<350'],  // Time to first byte
     'http_req_receiving': ['p(95)<50'],  // Content download time
     
-    // Rate limiting (should not trigger during normal load)
-    'http_reqs{status:429}': ['count<10'],  // Less than 10 rate limit errors
+    // Rate limiting (keep under control as a percentage of total traffic)
+    'http_reqs{status:429}': [`rate<${status429RateMax}`],
     
     // Server errors
     'http_reqs{status:500}': ['count<5'],   // Less than 5 server errors
