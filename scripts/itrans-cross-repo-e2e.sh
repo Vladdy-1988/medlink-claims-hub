@@ -310,7 +310,7 @@ CLAIM_RESPONSE="$(
       \"providerId\":\"${PROVIDER_ID}\",
       \"insurerId\":\"${INSURER_ID}\",
       \"type\":\"claim\",
-      \"amount\":120.00,
+      \"amount\":\"120.00\",
       \"currency\":\"CAD\",
       \"codes\":[{\"code\":\"99213\",\"description\":\"Office visit\",\"quantity\":1,\"unitPrice\":120}],
       \"notes\":\"Cross-repo E2E submission\"
