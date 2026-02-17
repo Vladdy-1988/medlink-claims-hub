@@ -164,10 +164,11 @@ function clearFailedLoginAttempts(email: string): void {
 }
 
 // Development mode authentication bypass
+const devAuthUserId = (process.env.DEV_AUTH_USER_ID || 'dev-user-001').trim() || 'dev-user-001';
 const devAuth = (middleware: any) => {
   return async (req: any, res: any, next: any) => {
     if (isDevAuthBypassEnabled(req)) {
-      req.user = { claims: { sub: 'dev-user-001' } };
+      req.user = { claims: { sub: devAuthUserId } };
       req.isAuthenticated = () => true;
       return next();
     }

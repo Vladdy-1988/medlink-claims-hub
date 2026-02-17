@@ -266,6 +266,7 @@ echo "[E2E] Starting MedLink on port ${MEDLINK_PORT}"
   PORT="$MEDLINK_PORT" \
   NODE_ENV=development \
   ALLOW_DEV_AUTH_BYPASS=true \
+  DEV_AUTH_USER_ID="test-user-001" \
   ENABLE_TEST_LOGIN=true \
   TEST_LOGIN_EMAIL="test@staging.local" \
   TEST_LOGIN_PASSWORD="test-pass" \
