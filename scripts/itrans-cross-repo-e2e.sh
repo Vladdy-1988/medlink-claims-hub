@@ -255,6 +255,7 @@ echo "[E2E] Starting workflow relay worker"
   RELAY_WEBHOOK_SIGNING_SECRET="$RELAY_WEBHOOK_SIGNING_SECRET" \
   RELAY_MEDLINK_WEBHOOK_URL="http://127.0.0.1:${MEDLINK_PORT}/api/itrans/webhooks/workflow" \
   RELAY_STATE_FILE="$ARTIFACT_DIR/workflow-relay-state.json" \
+  RELAY_CONFIRMATIONS=0 \
   RELAY_START_BLOCK=0 \
   npm run relay:workflow >"$RELAY_LOG" 2>&1
 ) &
