@@ -241,6 +241,7 @@ echo "[E2E] Starting modern-itrans-core on port ${ITRANS_PORT}"
   EVM_RPC_URL="http://127.0.0.1:${GANACHE_PORT}" \
   EVM_PRIVATE_KEY="$EVM_PRIVATE_KEY" \
   EVM_WORKFLOW_CONTRACT_ADDRESS="$WORKFLOW_CONTRACT_ADDRESS" \
+  RELAY_STATE_FILE="$ARTIFACT_DIR/workflow-relay-state.json" \
   npm run dev >"$ITRANS_LOG" 2>&1
 ) &
 ITRANS_PID="$!"
