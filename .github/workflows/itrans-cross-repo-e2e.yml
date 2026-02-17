@@ -1,0 +1,131 @@
+name: iTrans Cross-Repo E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 5 * * *'
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'scripts/itrans-cross-repo-e2e.sh'
+      - '.github/workflows/itrans-cross-repo-e2e.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'scripts/itrans-cross-repo-e2e.sh'
+      - '.github/workflows/itrans-cross-repo-e2e.yml'
+
+concurrency:
+  group: itrans-cross-repo-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-repo-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: medlink_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d medlink_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout MedLink repo
+        uses: actions/checkout@v4
+
+      - name: Checkout modern-itrans-core repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ITRANS_CORE_REPO || 'Vladdy-1988/modern-itrans-core' }}
+          token: ${{ secrets.ITRANS_CORE_READ_TOKEN || github.token }}
+          path: modern-itrans-core
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install MedLink dependencies
+        run: npm ci
+
+      - name: Install modern-itrans-core dependencies
+        working-directory: modern-itrans-core
+        run: npm ci --omit=optional --force
+
+      - name: Run cross-repo E2E script
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/medlink_e2e
+          MEDLINK_DIR: ${{ github.workspace }}
+          ITRANS_DIR: ${{ github.workspace }}/modern-itrans-core
+          E2E_ARTIFACT_DIR: ${{ github.workspace }}/.local/itrans-cross-repo-e2e
+        run: bash scripts/itrans-cross-repo-e2e.sh
+
+      - name: Show E2E summary
+        if: always()
+        run: |
+          SUMMARY_FILE=".local/itrans-cross-repo-e2e/result.json"
+          if [ -f "$SUMMARY_FILE" ]; then
+            cat "$SUMMARY_FILE"
+          else
+            echo "No E2E summary file found at $SUMMARY_FILE"
+          fi
+
+      - name: Validate E2E summary gate
+        if: always()
+        run: |
+          SUMMARY_FILE=".local/itrans-cross-repo-e2e/result.json"
+          if [ ! -f "$SUMMARY_FILE" ]; then
+            echo "Missing E2E summary file: $SUMMARY_FILE" >&2
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const summaryPath = '.local/itrans-cross-repo-e2e/result.json';
+          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+
+          if (summary.status !== 'pass') {
+            console.error(`E2E summary status is not pass: ${summary.status}`);
+            if (summary.failureReason) {
+              console.error(`failureReason: ${summary.failureReason}`);
+            }
+            process.exit(1);
+          }
+
+          if (!summary.claimId || !summary.requestId) {
+            console.error('E2E summary is missing claimId or requestId');
+            process.exit(1);
+          }
+
+          if (!Number.isFinite(summary.deliveredCount) || summary.deliveredCount < 1) {
+            console.error(`E2E deliveredCount is invalid: ${summary.deliveredCount}`);
+            process.exit(1);
+          }
+
+          console.log(`E2E summary gate passed: claimId=${summary.claimId}, requestId=${summary.requestId}, deliveredCount=${summary.deliveredCount}`);
+          NODE
+
+      - name: Upload E2E logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: itrans-cross-repo-e2e-logs
+          path: .local/itrans-cross-repo-e2e
+          retention-days: 7

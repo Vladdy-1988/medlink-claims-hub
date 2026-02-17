@@ -45,11 +45,23 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading, error } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
     retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
   });
 
   const { data: recentClaims, isLoading: claimsLoading } = useQuery({
     queryKey: ["/api/claims"],
     retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const claims = Array.isArray(query.state.data) ? query.state.data as any[] : [];
+      const hasInFlightClaim = claims.some((claim) =>
+        ['submitted', 'pending', 'infoRequested'].includes(claim?.status)
+      );
+      return hasInFlightClaim ? 10000 : 30000;
+    },
   });
 
   if (error && isUnauthorizedError(error as Error)) {

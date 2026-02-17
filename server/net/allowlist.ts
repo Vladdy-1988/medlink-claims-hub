@@ -4,9 +4,10 @@
  * All outbound HTTP calls must go through this wrapper
  */
 
-import { URL } from 'url';
 import https from 'https';
 import http from 'http';
+
+const nativeFetch = globalThis.fetch?.bind(globalThis);
 
 // Production domains that must be blocked in sandbox mode
 const BLOCKED_DOMAINS = [
@@ -51,6 +52,14 @@ function isDomainAllowed(hostname: string): boolean {
 
   // Allow localhost with port
   if (hostname.startsWith('localhost:') || hostname.startsWith('127.0.0.1:')) {
+    return true;
+  }
+
+  // Always allow Replit domains (needed for OAuth/OIDC authentication)
+  const lowerHost = hostname.toLowerCase();
+  if (lowerHost === 'replit.com' || lowerHost.endsWith('.replit.com') ||
+      lowerHost === 'replit.dev' || lowerHost.endsWith('.replit.dev') ||
+      lowerHost === 'repl.co' || lowerHost.endsWith('.repl.co')) {
     return true;
   }
 
@@ -104,7 +113,7 @@ function createBlockedResponse(hostname: string): any {
       keys: () => mockHeaders.keys(),
       values: () => mockHeaders.values(),
       has: (key: string) => mockHeaders.has(key.toLowerCase()),
-      forEach: (fn: Function) => mockHeaders.forEach(fn)
+      forEach: (fn: (value: string, key: string, map: Map<string, string>) => void) => mockHeaders.forEach(fn)
     }
   };
 }
@@ -135,22 +144,12 @@ export async function safeFetch(url: string | Request | URL, options?: RequestIn
       return createBlockedResponse(parsedUrl.hostname) as Response;
     }
 
-    // Make the actual request using native fetch if available
-    let response: Response;
-    if (typeof globalThis.fetch === 'function' && globalThis.fetch !== safeFetch) {
-      // Use native fetch if available (avoid infinite recursion)
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = () => { throw new Error('Nested fetch detected'); };
-      try {
-        response = await originalFetch(url, options);
-      } finally {
-        globalThis.fetch = safeFetch;
-      }
-    } else {
-      // Fallback to node-fetch or other implementation
-      const nodeFetch = await import('node-fetch');
-      response = await nodeFetch.default(urlString, options as any) as any;
+    if (typeof nativeFetch !== 'function') {
+      throw new Error('Native fetch is unavailable; cannot execute safeFetch');
     }
+
+    // Use the original runtime fetch captured before global patching.
+    const response = await nativeFetch(urlString, options);
     
     // In sandbox mode, add metadata to responses
     if (process.env.EDI_MODE === 'sandbox') {
@@ -283,10 +282,17 @@ export function testDomain(domain: string): { allowed: boolean; reason: string }
       domain.startsWith('localhost:') || domain.startsWith('127.0.0.1:')) {
     return { allowed: true, reason: 'Localhost is always allowed' };
   }
+
+  // Check Replit domains (needed for OAuth/OIDC)
+  const lowerDomain = domain.toLowerCase();
+  if (lowerDomain === 'replit.com' || lowerDomain.endsWith('.replit.com') ||
+      lowerDomain === 'replit.dev' || lowerDomain.endsWith('.replit.dev') ||
+      lowerDomain === 'repl.co' || lowerDomain.endsWith('.repl.co')) {
+    return { allowed: true, reason: 'Replit domain always allowed for auth' };
+  }
   
   // Check allowed prefixes
   const allowedPrefixes = getAllowedPrefixes();
-  const lowerDomain = domain.toLowerCase();
   
   for (const prefix of allowedPrefixes) {
     if (lowerDomain.startsWith(prefix) || lowerDomain.includes(`.${prefix}`)) {

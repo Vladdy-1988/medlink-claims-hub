@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from 
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
 import path from "path";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 // S3-compatible storage service (works with AWS S3, Cloudflare R2, etc.)
 export class S3StorageService {

@@ -169,9 +169,10 @@ export class ClaimsScheduler {
 
     // Log the status check
     await auditLogger.log({
-      orgId: '', // Will be filled by the audit logger
-      actorUserId: 'system',
-      type: 'claim_status_polled',
+      userId: 'system',
+      action: 'claim.status_polled',
+      resourceType: 'claim',
+      resourceId: job.claimId,
       details: {
         claimId: job.claimId,
         submissionId: job.submissionId,
@@ -179,8 +180,9 @@ export class ClaimsScheduler {
         status: statusResponse.status,
         attempt: job.attempts,
       },
-      ip: '127.0.0.1',
+      ipAddress: '127.0.0.1',
       userAgent: 'Claims Scheduler',
+      success: true,
     });
 
     if (shouldContinuePolling && job.attempts < job.maxAttempts) {

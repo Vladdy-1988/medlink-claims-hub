@@ -205,23 +205,23 @@ export function configureCORS() {
   
   return {
     origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
-      if (!origin) return callback(null, true);
-      
-      // Allow localhost and replit domains for development
-      if (origin.includes('localhost') || origin.includes('replit.dev') || origin.includes('replit.app')) {
-        return callback(null, true);
+      if (!origin) {
+        return callback(new Error('Origin is required for SSO'));
       }
-      
-      // Check configured allowed origins
+
+      // Explicit localhost allow only during local development.
+      if (process.env.NODE_ENV === 'development' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        callback(null, true);
+        return;
+      }
+
+      // Require explicit allowlist in non-local environments.
       if (allowedOrigins.length > 0 && isAllowedOrigin(origin)) {
         callback(null, true);
-      } else if (allowedOrigins.length === 0) {
-        // If no origins configured, allow all for development
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+        return;
       }
+
+      callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

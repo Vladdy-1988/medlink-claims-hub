@@ -19,7 +19,6 @@ interface TokenCache {
 }
 
 export class TelusEClaimsConnector extends BaseConnector {
-  protected config: any;
   private tokenCache: TokenCache | null = null;
 
   async validate(claim: Claim): Promise<void> {

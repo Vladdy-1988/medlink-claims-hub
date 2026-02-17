@@ -1,8 +1,53 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initSentry, getSentryMiddleware } from "./monitoring/sentry";
 import { safeFetch } from "./net/allowlist";
+
+const disallowedSecretValues = new Set([
+  '',
+  'changeme',
+  'change-me',
+  'replace-me',
+  'replace_me',
+  'replace-with-strong-random-value',
+  'replace-with-strong-random-value-min-32-chars',
+  'replace-with-real-value',
+  'your-secret',
+  'your-session-secret',
+  'your-session-secret-min-32-chars',
+  'your-shared-secret',
+  'your-shared-secret-here',
+  'secret',
+  'password',
+  'default',
+]);
+
+function isPlaceholderSecretValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (disallowedSecretValues.has(normalized)) {
+    return true;
+  }
+  return (
+    normalized.startsWith('replace-with-') ||
+    normalized.startsWith('your-') ||
+    normalized.includes('example')
+  );
+}
+
+function requireStrongSecretInProduction(name: string, value: string | undefined, minLength: number): void {
+  if (process.env.NODE_ENV !== 'production') {
+    return;
+  }
+
+  if (!value || value.length < minLength) {
+    throw new Error(`${name} must be set and at least ${minLength} characters in production`);
+  }
+  if (isPlaceholderSecretValue(value)) {
+    throw new Error(`${name} must not use placeholder/default values in production`);
+  }
+}
 
 // Store the original fetch for reference
 const originalFetch = globalThis.fetch;
@@ -26,7 +71,11 @@ app.use(sentryMiddleware.requestHandler);
 // Add Sentry tracing handler
 app.use(sentryMiddleware.tracingHandler);
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf.toString('utf-8');
+  },
+}));
 app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
@@ -60,6 +109,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  requireStrongSecretInProduction('SESSION_SECRET', process.env.SESSION_SECRET, 32);
+  requireStrongSecretInProduction('ENCRYPTION_KEY', process.env.ENCRYPTION_KEY, 32);
+  requireStrongSecretInProduction('HASH_KEY', process.env.HASH_KEY, 32);
+
   // Check and verify encryption key on startup
   if (!process.env.ENCRYPTION_KEY) {
     if (process.env.NODE_ENV === 'production') {
@@ -180,6 +233,23 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
+    // In production, add a middleware to skip static serving for API routes
+    app.use((req, res, next) => {
+      // Skip static file serving for API and other JSON endpoints
+      if (req.path.startsWith('/api/') || 
+          req.path === '/healthz' || 
+          req.path === '/readyz' || 
+          req.path === '/metrics' ||
+          req.path.startsWith('/auth/') ||
+          req.path.startsWith('/upload/')) {
+        // Let these requests pass through to the API routes registered earlier
+        return next('route');
+      }
+      // For all other requests, continue to static file serving
+      next();
+    });
+    
+    // Now serve static files for non-API routes
     serveStatic(app);
   }
 

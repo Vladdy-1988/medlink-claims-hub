@@ -40,6 +40,15 @@ export default function ClaimDetail({ params }: ClaimDetailProps) {
   const { data: claim, isLoading: claimLoading, error } = useQuery<Claim>({
     queryKey: ["/api/claims", params.id],
     retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const currentClaim = query.state.data as Claim | undefined;
+      if (!currentClaim) {
+        return 10000;
+      }
+      return ['submitted', 'pending', 'infoRequested'].includes(currentClaim.status) ? 10000 : false;
+    },
   });
 
   const { data: patients } = useQuery<Patient[]>({

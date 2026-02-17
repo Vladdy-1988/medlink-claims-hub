@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 /**
@@ -252,10 +252,12 @@ export class FieldEncryption {
     const fields = PHI_FIELDS[tableName as keyof typeof PHI_FIELDS];
     if (!fields) return obj;
     
-    const encrypted = { ...obj };
+    const encrypted = { ...obj } as T;
+    const encryptedRecord = encrypted as Record<string, any>;
+    const sourceRecord = obj as Record<string, any>;
     for (const field of fields) {
-      if (field in encrypted && encrypted[field] !== null && encrypted[field] !== undefined) {
-        encrypted[field] = this.encrypt(encrypted[field]);
+      if (field in sourceRecord && sourceRecord[field] !== null && sourceRecord[field] !== undefined) {
+        encryptedRecord[field] = this.encrypt(sourceRecord[field]);
       }
     }
     
@@ -269,12 +271,14 @@ export class FieldEncryption {
     const fields = PHI_FIELDS[tableName as keyof typeof PHI_FIELDS];
     if (!fields) return obj;
     
-    const decrypted = { ...obj };
+    const decrypted = { ...obj } as T;
+    const decryptedRecord = decrypted as Record<string, any>;
+    const sourceRecord = obj as Record<string, any>;
     for (const field of fields) {
-      if (field in decrypted && decrypted[field]) {
-        const decryptedValue = this.decrypt(decrypted[field]);
+      if (field in sourceRecord && sourceRecord[field]) {
+        const decryptedValue = this.decrypt(sourceRecord[field]);
         if (decryptedValue !== null) {
-          decrypted[field] = decryptedValue;
+          decryptedRecord[field] = decryptedValue;
         }
       }
     }

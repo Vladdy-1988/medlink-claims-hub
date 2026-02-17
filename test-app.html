@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MedLink Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+        h1 { color: #fff; }
+        .test-link {
+            display: inline-block;
+            margin: 10px;
+            padding: 15px 30px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .test-link:hover {
+            background: #f0f0f0;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(0,255,0,0.2);
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 MedLink Claims Hub - Connection Test</h1>
+        
+        <div class="status">
+            ✅ <strong>Your app is running successfully!</strong><br>
+            The server is responding at port 5000.
+        </div>
+
+        <h2>Try These Links:</h2>
+        
+        <a href="https://med-link-claims-vlad218.replit.app" target="_blank" class="test-link">
+            Open Staging App →
+        </a>
+        
+        <a href="https://med-link-claims-vlad218.replit.app/investor-dashboard" target="_blank" class="test-link">
+            Open Investor Dashboard →
+        </a>
+
+        <h2>Quick Network Test:</h2>
+        <p>Click the button below to test if your browser can reach the app:</p>
+        <button onclick="testConnection()" style="padding: 10px 20px; font-size: 16px;">Test Connection</button>
+        <div id="result"></div>
+
+        <h2>If Still Blank:</h2>
+        <ul>
+            <li>Try <strong>Firefox</strong> or <strong>Edge</strong> instead of Chrome/Safari</li>
+            <li>Disable browser extensions (especially ad blockers)</li>
+            <li>Use your phone's browser</li>
+            <li>Try a different WiFi network</li>
+        </ul>
+
+        <script>
+            function testConnection() {
+                document.getElementById('result').innerHTML = 'Testing...';
+                fetch('https://med-link-claims-vlad218.replit.app/api/health')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('result').innerHTML = 
+                            '<div style="color: #00ff00; margin-top: 10px;">✅ Connection successful! API returned: ' + JSON.stringify(data) + '</div>';
+                    })
+                    .catch(error => {
+                        document.getElementById('result').innerHTML = 
+                            '<div style="color: #ff6666; margin-top: 10px;">❌ Connection blocked: ' + error.message + '</div>';
+                    });
+            }
+        </script>
+    </div>
+</body>
+</html>

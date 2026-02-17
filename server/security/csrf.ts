@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 const CSRF_TOKEN_LENGTH = 32;
 const CSRF_COOKIE_NAME = 'csrfToken';
@@ -38,6 +38,11 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
 
   // Skip CSRF for auth callbacks (OAuth flows)
   if (req.path === '/api/callback') {
+    return next();
+  }
+
+  // Skip CSRF for signed machine-to-machine webhooks
+  if (req.path === '/api/itrans/webhooks/workflow') {
     return next();
   }
 

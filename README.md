@@ -87,6 +87,93 @@ The Claims Hub will automatically:
 - **Audit Logging**: All SSO logins tracked with metadata
 - **Secure Cookies**: HttpOnly, SameSite=Lax, Secure for HTTPS
 
+## iTrans Workflow Integration
+
+MedLink can auto-submit newly created claims/pre-auths to `modern-itrans-core` workflow endpoints and receive adjudication callbacks.
+
+### Required Environment Variables
+
+```bash
+ITRANS_API_URL=http://127.0.0.1:3002
+ITRANS_AUTO_SUBMIT_ENABLED=false
+ITRANS_AUTO_SUBMIT_MAX_ATTEMPTS=4
+ITRANS_AUTO_SUBMIT_BASE_DELAY_MS=3000
+ITRANS_AUTO_SUBMIT_MAX_DELAY_MS=60000
+ITRANS_AUTO_SUBMIT_QUEUE_LIMIT=1000
+ITRANS_AUTO_SUBMIT_STATE_FILE=./.local/itrans-auto-submit-state.json
+ITRANS_CLAIMS_API_KEY=...
+ITRANS_WORKFLOW_API_KEY=...
+ITRANS_PROVIDER_SIGNATURE_HMAC_SECRET=...
+ITRANS_WEBHOOK_SIGNING_SECRET=...
+```
+
+### Auto-Submit Behavior
+
+- Auto-submit is disabled unless `ITRANS_AUTO_SUBMIT_ENABLED=true`.
+- `POST /api/claims` now queues iTrans workflow submission asynchronously.
+- The request returns immediately with `itransSubmission.status=queued`.
+- Queue retries are bounded by `ITRANS_AUTO_SUBMIT_MAX_ATTEMPTS` with exponential backoff.
+- Queue state is persisted to disk (`ITRANS_AUTO_SUBMIT_STATE_FILE`) so in-flight jobs recover after restart.
+- Queue health endpoint:
+  - `GET /api/itrans/auto-submit/queue?limit=50`
+
+### Relay Callback Endpoint
+
+- `POST /api/itrans/webhooks/workflow`
+
+This endpoint:
+- verifies `x-itrans-relay-signature` HMAC
+- validates `x-itrans-relay-timestamp` freshness
+- enforces idempotency using `idempotency-key`
+- updates local claim status from workflow events:
+  - `REQUEST_SUBMITTED` -> `submitted`
+  - `REQUEST_ACKNOWLEDGED` -> `pending`
+  - `REQUEST_ADJUDICATED` -> `paid` / `denied` / `infoRequested`
+
+### Operations Runbook
+
+- `docs/itrans-production-runbook.md`
+- `DONE.md` (scope lock + launch gate evidence checklist)
+
+### Cross-Repo E2E Harness
+
+Run full MedLink + modern-itrans-core + relay validation:
+
+```bash
+DATABASE_URL=postgresql://... \
+ITRANS_DIR=/path/to/modern-itrans-core \
+bash scripts/itrans-cross-repo-e2e.sh
+```
+
+The script starts Ganache, deploys workflow contract, boots both apps and relay, submits a claim via MedLink, adjudicates on iTrans, and verifies callback-driven status propagation to MedLink.
+It writes a machine-readable summary to `./.local/itrans-cross-repo-e2e/result.json`.
+
+Run staging validation gates (functional E2E, relay failure-injection tests, optional load/soak):
+
+```bash
+DATABASE_URL=postgresql://... \
+ITRANS_DIR=/path/to/modern-itrans-core \
+bash scripts/itrans-staging-validation.sh
+```
+
+Optional load/soak tuning vars:
+- `LOAD_DURATION` (default `5m`)
+- `SOAK_DURATION` (default `30m`)
+- `LOAD_TARGET_VUS` (default `100`)
+- `SOAK_VUS` (default `50`)
+
+SLO gate tuning vars for load/soak validation:
+- `SLO_P95_MAX_MS` (default `400`)
+- `SLO_P99_MAX_MS` (default `1000`)
+- `SLO_ERROR_RATE_MAX` (default `0.01`)
+- `SLO_CHECK_RATE_MIN` (default `0.95`)
+- `SLO_MIN_REQUESTS_LOAD` (default `200`)
+- `SLO_MIN_REQUESTS_SOAK` (default `500`)
+
+When load tests are enabled, the staging validation artifacts include:
+- `k6-load-summary.json` and `k6-soak-summary.json`
+- `k6-load-gate.json` and `k6-soak-gate.json` (explicit SLO gate evaluation outputs)
+
 ## Development Setup
 
 1. **Install Dependencies**:

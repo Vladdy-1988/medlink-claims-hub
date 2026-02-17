@@ -65,7 +65,7 @@ export class EncryptionMigration {
     dryRun: boolean
   ): Promise<void> {
     const fields = PHI_FIELDS[tableName as keyof typeof PHI_FIELDS];
-    if (!fields || fields.length === 0) {
+    if (!fields) {
       console.log(`Skipping ${tableName}: no PHI fields`);
       return;
     }
@@ -208,7 +208,7 @@ export class EncryptionMigration {
     dryRun: boolean
   ): Promise<void> {
     const fields = PHI_FIELDS[tableName as keyof typeof PHI_FIELDS];
-    if (!fields || fields.length === 0) {
+    if (!fields) {
       return;
     }
 
@@ -325,8 +325,9 @@ export class EncryptionMigration {
       const records = await db.select().from(table).limit(10);
       
       for (const record of records) {
+        const recordData = record as Record<string, unknown>;
         for (const field of fields) {
-          const encryptedValue = record[field as keyof typeof record];
+          const encryptedValue = recordData[field];
           if (!encryptedValue) continue;
           
           try {
@@ -334,7 +335,7 @@ export class EncryptionMigration {
             if (decrypted === null) {
               errors.push({
                 table: tableName,
-                id: record.id as string,
+                id: String(recordData.id ?? ''),
                 field,
                 error: 'Failed to decrypt',
               });
@@ -342,7 +343,7 @@ export class EncryptionMigration {
           } catch (error) {
             errors.push({
               table: tableName,
-              id: record.id as string,
+              id: String(recordData.id ?? ''),
               field,
               error: error instanceof Error ? error.message : String(error),
             });

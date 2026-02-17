@@ -11,75 +11,89 @@ const errorRate = new Rate('errors');
 const claimCreationDuration = new Trend('claim_creation_duration');
 const dashboardLoadDuration = new Trend('dashboard_load_duration');
 
+function parsePositiveIntEnv(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const LOAD_RAMP_UP_DURATION = __ENV.K6_LOAD_RAMP_UP_DURATION || '30s';
+const LOAD_HOLD_DURATION = __ENV.K6_LOAD_HOLD_DURATION || '4m';
+const LOAD_RAMP_DOWN_DURATION = __ENV.K6_LOAD_RAMP_DOWN_DURATION || '30s';
+const LOAD_TARGET_VUS = parsePositiveIntEnv(__ENV.K6_LOAD_TARGET_VUS, 100);
+const SOAK_VUS = parsePositiveIntEnv(__ENV.K6_SOAK_VUS, 50);
+const SOAK_DURATION = __ENV.K6_SOAK_DURATION || '30m';
+const ENABLE_SOAK_SCENARIO = __ENV.K6_ENABLE_SOAK === 'true';
+
+const scenarios = {
+  // Smoke test: Minimal load to verify system works
+  smoke_test: {
+    executor: 'constant-vus',
+    vus: 1,
+    duration: '1m',
+    tags: { test_type: 'smoke' },
+    env: { SCENARIO: 'smoke' },
+    startTime: '0s'
+  },
+
+  // Load test: Normal expected load
+  load_test: {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+      { duration: LOAD_RAMP_UP_DURATION, target: Math.floor(LOAD_TARGET_VUS / 2) },
+      { duration: LOAD_HOLD_DURATION, target: LOAD_TARGET_VUS },
+      { duration: LOAD_RAMP_DOWN_DURATION, target: 0 },
+    ],
+    tags: { test_type: 'load' },
+    env: { SCENARIO: 'load' },
+    startTime: '0s'
+  },
+
+  // Stress test: Beyond normal operations
+  stress_test: {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+      { duration: '1m', target: 100 },   // Ramp to 100 users
+      { duration: '2m', target: 200 },   // Ramp to 200 users
+      { duration: '5m', target: 300 },   // Stay at 300 users
+      { duration: '2m', target: 0 },     // Ramp down
+    ],
+    tags: { test_type: 'stress' },
+    env: { SCENARIO: 'stress' },
+    startTime: '0s'
+  },
+
+  // Spike test: Sudden load increase
+  spike_test: {
+    executor: 'ramping-vus',
+    startVUs: 0,
+    stages: [
+      { duration: '10s', target: 0 },    // Baseline
+      { duration: '30s', target: 500 },  // Spike to 500 users
+      { duration: '1m', target: 500 },   // Hold the spike
+      { duration: '30s', target: 0 },    // Quick ramp down
+    ],
+    tags: { test_type: 'spike' },
+    env: { SCENARIO: 'spike' },
+    startTime: '0s'
+  },
+};
+
+if (ENABLE_SOAK_SCENARIO) {
+  scenarios.soak_test = {
+    executor: 'constant-vus',
+    vus: SOAK_VUS,
+    duration: SOAK_DURATION,
+    tags: { test_type: 'soak' },
+    env: { SCENARIO: 'soak' },
+    startTime: '0s'
+  };
+}
+
 // Test scenario configurations
 export const options = {
-  scenarios: {
-    // Smoke test: Minimal load to verify system works
-    smoke_test: {
-      executor: 'constant-vus',
-      vus: 1,
-      duration: '1m',
-      tags: { test_type: 'smoke' },
-      env: { SCENARIO: 'smoke' },
-      startTime: '0s'
-    },
-    
-    // Load test: Normal expected load
-    load_test: {
-      executor: 'ramping-vus',
-      startVUs: 0,
-      stages: [
-        { duration: '30s', target: 50 },  // Ramp up to 50 users
-        { duration: '4m', target: 100 },  // Stay at 100 users
-        { duration: '30s', target: 0 },   // Ramp down
-      ],
-      tags: { test_type: 'load' },
-      env: { SCENARIO: 'load' },
-      startTime: '2m' // Start after smoke test
-    },
-    
-    // Stress test: Beyond normal operations
-    stress_test: {
-      executor: 'ramping-vus',
-      startVUs: 0,
-      stages: [
-        { duration: '1m', target: 100 },   // Ramp to 100 users
-        { duration: '2m', target: 200 },   // Ramp to 200 users
-        { duration: '5m', target: 300 },   // Stay at 300 users
-        { duration: '2m', target: 0 },     // Ramp down
-      ],
-      tags: { test_type: 'stress' },
-      env: { SCENARIO: 'stress' },
-      startTime: '8m' // Start after load test
-    },
-    
-    // Spike test: Sudden load increase
-    spike_test: {
-      executor: 'ramping-vus',
-      startVUs: 0,
-      stages: [
-        { duration: '10s', target: 0 },    // Baseline
-        { duration: '30s', target: 500 },  // Spike to 500 users
-        { duration: '1m', target: 500 },   // Hold the spike
-        { duration: '30s', target: 0 },    // Quick ramp down
-      ],
-      tags: { test_type: 'spike' },
-      env: { SCENARIO: 'spike' },
-      startTime: '19m' // Start after stress test
-    },
-    
-    // Soak test: Extended duration test (commented out by default)
-    /*
-    soak_test: {
-      executor: 'constant-vus',
-      vus: 50,
-      duration: '30m',
-      tags: { test_type: 'soak' },
-      env: { SCENARIO: 'soak' },
-      startTime: '22m'
-    }
-    */
-  },
+  scenarios,
   
   // Apply thresholds from thresholds.js
   thresholds: applyThresholds(),

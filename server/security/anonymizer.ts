@@ -1,8 +1,5 @@
 import { faker } from '@faker-js/faker';
-import * as crypto from 'crypto';
-
-// Set up faker with Canadian locale
-faker.locale = 'en_CA';
+import * as crypto from 'node:crypto';
 
 /**
  * Comprehensive PHI data anonymizer for staging/test environments

@@ -6,7 +6,7 @@
 import speakeasy from 'speakeasy';
 import qrcode from 'qrcode';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { usersRepo } from '../db/repo';
 

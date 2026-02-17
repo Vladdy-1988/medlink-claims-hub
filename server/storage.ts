@@ -75,6 +75,8 @@ export interface IStorage {
   // Claim operations
   getClaims(orgId: string, userId?: string, role?: string): Promise<Claim[]>;
   getClaim(id: string): Promise<Claim | undefined>;
+  getClaimByReferenceNumber(referenceNumber: string): Promise<Claim | undefined>;
+  getClaimByExternalId(externalId: string): Promise<Claim | undefined>;
   createClaim(claim: InsertClaim): Promise<Claim>;
   updateClaim(id: string, updates: Partial<Claim>): Promise<Claim | undefined>;
   updateClaimStatus(id: string, status: string): Promise<void>;
@@ -276,6 +278,16 @@ export class DatabaseStorage implements IStorage {
 
   async getClaim(id: string): Promise<Claim | undefined> {
     const [claim] = await db.select().from(claims).where(eq(claims.id, id));
+    return claim ? decryptRecord('claims', claim) : undefined;
+  }
+
+  async getClaimByReferenceNumber(referenceNumber: string): Promise<Claim | undefined> {
+    const [claim] = await db.select().from(claims).where(eq(claims.referenceNumber, referenceNumber)).limit(1);
+    return claim ? decryptRecord('claims', claim) : undefined;
+  }
+
+  async getClaimByExternalId(externalId: string): Promise<Claim | undefined> {
+    const [claim] = await db.select().from(claims).where(eq(claims.externalId, externalId)).limit(1);
     return claim ? decryptRecord('claims', claim) : undefined;
   }
 
