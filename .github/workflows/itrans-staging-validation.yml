@@ -52,7 +52,7 @@ jobs:
 
       - name: Install modern-itrans-core dependencies
         working-directory: modern-itrans-core
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Setup K6
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_load_tests == 'true' }}

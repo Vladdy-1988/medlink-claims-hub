@@ -66,7 +66,7 @@ jobs:
 
       - name: Install modern-itrans-core dependencies
         working-directory: modern-itrans-core
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Run cross-repo E2E script
         env:
