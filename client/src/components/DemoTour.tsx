@@ -25,7 +25,7 @@ interface DemoTourProps {
   context?: 'investor' | 'dashboard' | 'general';
 }
 
-const tourStyles: Styles = {
+const tourStyles: Partial<Styles> = {
   options: {
     primaryColor: '#3b82f6',
     zIndex: 10000,

@@ -73,6 +73,16 @@ interface ClaimWizardProps {
   prefillData?: any;
 }
 
+interface SubmitResult {
+  localClaim: { id: string };
+  itransSubmission?: {
+    status: 'submitted' | 'failed';
+    requestId?: string;
+    requestIdHash?: string;
+    error?: string;
+  };
+}
+
 const AUTOSAVE_KEY = 'medlink-claim-draft';
 const AUTOSAVE_INTERVAL = 2000; // 2 seconds
 
@@ -149,28 +159,45 @@ export function ClaimWizard({ type = 'claim', initialData, onComplete }: ClaimWi
 
   const submitMutation = useMutation({
     mutationFn: async (data: ClaimData) => {
-      return apiRequest(`/api/claims`, 'POST', {
+      const localResponse = await apiRequest(`/api/claims`, 'POST', {
         ...data,
         amount: parseFloat(data.amount),
       });
+      const localClaim = await localResponse.json();
+      return {
+        localClaim,
+        itransSubmission: localClaim?.itransSubmission,
+      } as SubmitResult;
     },
-    onSuccess: async (response: any) => {
+    onSuccess: async (result: SubmitResult) => {
       try {
         await del(AUTOSAVE_KEY); // Clear draft after successful submission
       } catch (error) {
         console.error('Failed to clear draft:', error);
       }
-      toast({
-        title: "Success",
-        description: `${type === 'preauth' ? 'Pre-authorization' : 'Claim'} submitted successfully`,
-      });
+
+      if (result.itransSubmission?.status === 'failed') {
+        toast({
+          title: "Partially Complete",
+          description: `${type === 'preauth' ? 'Pre-authorization' : 'Claim'} saved, but iTrans submission failed: ${result.itransSubmission.error || 'Unknown error'}`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: result.itransSubmission?.requestId
+            ? `${type === 'preauth' ? 'Pre-authorization' : 'Claim'} submitted to iTrans successfully`
+            : `${type === 'preauth' ? 'Pre-authorization' : 'Claim'} submitted successfully`,
+        });
+      }
+
       queryClient.invalidateQueries({ queryKey: ['/api/claims'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard/stats'] });
       
       if (onComplete) {
-        onComplete(response.id);
+        onComplete(result.localClaim.id);
       } else {
-        setLocation(`/claims/${response.id}`);
+        setLocation(`/claims/${result.localClaim.id}`);
       }
     },
     onError: (error: Error) => {

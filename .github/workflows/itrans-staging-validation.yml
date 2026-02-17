@@ -1,0 +1,137 @@
+name: iTrans Staging Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_load_tests:
+        description: 'Run load/soak tests against STAGING_BASE_URL'
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: '45 5 * * *'
+
+jobs:
+  staging-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: medlink_validation
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d medlink_validation"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout MedLink repo
+        uses: actions/checkout@v4
+
+      - name: Checkout modern-itrans-core repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ITRANS_CORE_REPO || 'Vladdy-1988/modern-itrans-core' }}
+          path: modern-itrans-core
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install MedLink dependencies
+        run: npm ci
+
+      - name: Install modern-itrans-core dependencies
+        working-directory: modern-itrans-core
+        run: npm ci
+
+      - name: Setup K6
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_load_tests == 'true' }}
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run staging validation gates
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/medlink_validation
+          MEDLINK_DIR: ${{ github.workspace }}
+          ITRANS_DIR: ${{ github.workspace }}/modern-itrans-core
+          VALIDATION_ARTIFACT_DIR: ${{ github.workspace }}/.local/itrans-staging-validation
+          RUN_FUNCTIONAL_E2E: true
+          RUN_FAILURE_INJECTION_TESTS: true
+          RUN_LOAD_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_load_tests == 'true' && 'true' || 'false' }}
+          STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+        run: bash scripts/itrans-staging-validation.sh
+
+      - name: Show staging summary
+        if: always()
+        run: |
+          SUMMARY_FILE=".local/itrans-staging-validation/summary.json"
+          if [ -f "$SUMMARY_FILE" ]; then
+            cat "$SUMMARY_FILE"
+          else
+            echo "No staging summary file found at $SUMMARY_FILE"
+          fi
+
+      - name: Validate staging summary gate
+        if: always()
+        env:
+          EXPECT_LOAD_TESTS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_load_tests == 'true' && 'true' || 'false' }}
+        run: |
+          SUMMARY_FILE=".local/itrans-staging-validation/summary.json"
+          if [ ! -f "$SUMMARY_FILE" ]; then
+            echo "Missing staging summary file: $SUMMARY_FILE" >&2
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const summaryPath = '.local/itrans-staging-validation/summary.json';
+          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+          const expectLoadTests = process.env.EXPECT_LOAD_TESTS === 'true';
+
+          if (summary.status !== 'pass') {
+            console.error(`Staging summary status is not pass: ${summary.status}`);
+            process.exit(1);
+          }
+
+          const gates = summary.gates || {};
+          if (gates.functionalE2E !== 'pass' || gates.failureInjection !== 'pass') {
+            console.error(`Required gates failed: functionalE2E=${gates.functionalE2E}, failureInjection=${gates.failureInjection}`);
+            process.exit(1);
+          }
+
+          if (expectLoadTests) {
+            if (gates.load !== 'pass' || gates.soak !== 'pass') {
+              console.error(`Load/soak gates failed: load=${gates.load}, soak=${gates.soak}`);
+              process.exit(1);
+            }
+          } else {
+            if (!['pass', 'skipped'].includes(gates.load) || !['pass', 'skipped'].includes(gates.soak)) {
+              console.error(`Unexpected load/soak gate values: load=${gates.load}, soak=${gates.soak}`);
+              process.exit(1);
+            }
+          }
+
+          console.log(`Staging summary gate passed: functionalE2E=${gates.functionalE2E}, failureInjection=${gates.failureInjection}, load=${gates.load}, soak=${gates.soak}`);
+          NODE
+
+      - name: Upload staging validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: itrans-staging-validation-${{ github.run_id }}
+          path: .local/itrans-staging-validation
+          retention-days: 14

@@ -1,23 +1,12 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import cors from "cors";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { safeFetch, testDomain } from "./net/allowlist";
 
-// Development mode authentication bypass
-const devAuth = (middleware: any) => {
-  return async (req: any, res: any, next: any) => {
-    if (process.env.NODE_ENV === 'development') {
-      // Skip authentication in development
-      req.user = { claims: { sub: 'dev-user-001' } };
-      return next();
-    }
-    // Use real authentication in production
-    return middleware(req, res, next);
-  };
-};
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { insertClaimSchema, insertAttachmentSchema, insertRemittanceSchema, insertPushSubscriptionSchema, insertConnectorConfigSchema } from "@shared/schema";
@@ -30,8 +19,796 @@ import { configureSecurityHeaders, additionalSecurityHeaders } from "./security/
 import { getCORSMiddleware } from "./security/cors";
 import { logger, requestLogger } from "./security/logger";
 import { healthCheck, readinessCheck, metricsEndpoint } from "./security/healthChecks";
+import { ItransWebhookIdempotencyStore } from "./integrations/itransWebhookIdempotency";
+import {
+  ItransAutoSubmitPersistedJob,
+  ItransAutoSubmitQueueStore,
+} from "./integrations/itransAutoSubmitQueueStore";
+import { validateItransProductionSecurityConfiguration } from "./integrations/itransSecurityConfig";
+
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+const loginAttemptStore = new Map<string, { count: number; firstAttemptAt: number; lockedUntil?: number }>();
+const ITRANS_WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
+const ITRANS_WEBHOOK_IDEMPOTENCY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const ITRANS_AUTO_SUBMIT_MAX_ATTEMPTS = parsePositiveIntEnv(process.env.ITRANS_AUTO_SUBMIT_MAX_ATTEMPTS, 4);
+const ITRANS_AUTO_SUBMIT_BASE_DELAY_MS = parsePositiveIntEnv(process.env.ITRANS_AUTO_SUBMIT_BASE_DELAY_MS, 3000);
+const ITRANS_AUTO_SUBMIT_MAX_DELAY_MS = parsePositiveIntEnv(process.env.ITRANS_AUTO_SUBMIT_MAX_DELAY_MS, 60000);
+const ITRANS_AUTO_SUBMIT_QUEUE_LIMIT = parsePositiveIntEnv(process.env.ITRANS_AUTO_SUBMIT_QUEUE_LIMIT, 1000);
+const ITRANS_AUTO_SUBMIT_JOB_RETENTION_MS = parsePositiveIntEnv(
+  process.env.ITRANS_AUTO_SUBMIT_JOB_RETENTION_MS,
+  24 * 60 * 60 * 1000
+);
+type ItransRelayEventType = 'REQUEST_SUBMITTED' | 'REQUEST_ACKNOWLEDGED' | 'REQUEST_ADJUDICATED';
+
+type ItransRelayWebhookPayload = {
+  eventId: string;
+  eventType: ItransRelayEventType;
+  chainId: number;
+  contractAddress: string;
+  blockNumber: number;
+  blockHash: string;
+  txHash: string;
+  logIndex: number;
+  requestIdHash: string;
+  occurredAt: number;
+  data: Record<string, unknown>;
+};
+
+type ItransAutoSubmitJob = ItransAutoSubmitPersistedJob;
+
+const itransWebhookIdempotencyStore = new ItransWebhookIdempotencyStore(
+  process.env.ITRANS_WEBHOOK_STATE_FILE || './.local/itrans-webhook-state.json'
+);
+const itransAutoSubmitQueueStore = new ItransAutoSubmitQueueStore(
+  process.env.ITRANS_AUTO_SUBMIT_STATE_FILE || './.local/itrans-auto-submit-state.json'
+);
+const itransAutoSubmitJobs = new Map<string, ItransAutoSubmitJob>(
+  Object.entries(itransAutoSubmitQueueStore.loadJobs(Date.now()))
+);
+const itransAutoSubmitJobByClaim = new Map<string, string>();
+let itransAutoSubmitWorkerRunning = false;
+let itransAutoSubmitWorkerTimer: NodeJS.Timeout | null = null;
+let itransAutoSubmitWorkerNextRunAt = 0;
+
+for (const [jobId, job] of itransAutoSubmitJobs.entries()) {
+  if (job.state === 'succeeded' || job.state === 'failed') {
+    continue;
+  }
+  const existingJobId = itransAutoSubmitJobByClaim.get(job.claimId);
+  if (!existingJobId) {
+    itransAutoSubmitJobByClaim.set(job.claimId, jobId);
+    continue;
+  }
+  const existingJob = itransAutoSubmitJobs.get(existingJobId);
+  if (!existingJob || existingJob.updatedAt <= job.updatedAt) {
+    itransAutoSubmitJobByClaim.set(job.claimId, jobId);
+  }
+}
+
+function persistItransAutoSubmitJobs(): void {
+  const snapshot: Record<string, ItransAutoSubmitJob> = {};
+  for (const [jobId, job] of itransAutoSubmitJobs.entries()) {
+    snapshot[jobId] = { ...job };
+  }
+
+  try {
+    itransAutoSubmitQueueStore.saveJobs(snapshot);
+  } catch (error) {
+    console.error('Failed to persist iTrans auto-submit queue state:', error);
+  }
+}
+
+function isLoopbackIp(ip: string): boolean {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+function isLocalRequest(req: any): boolean {
+  const host = String(req.hostname || '').toLowerCase();
+  const ip = String(req.ip || req.socket?.remoteAddress || '');
+  return host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local') || isLoopbackIp(ip);
+}
+
+function isDevAuthBypassEnabled(req: any): boolean {
+  return process.env.NODE_ENV === 'development' &&
+    process.env.ALLOW_DEV_AUTH_BYPASS === 'true' &&
+    isLocalRequest(req);
+}
+
+function normalizeEmailForRateLimit(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function getLoginAttemptState(email: string): { blocked: boolean; retryAfterSec?: number } {
+  const key = normalizeEmailForRateLimit(email);
+  const now = Date.now();
+  const state = loginAttemptStore.get(key);
+  if (!state) {
+    return { blocked: false };
+  }
+
+  if (state.lockedUntil && state.lockedUntil > now) {
+    return { blocked: true, retryAfterSec: Math.ceil((state.lockedUntil - now) / 1000) };
+  }
+
+  if (now - state.firstAttemptAt > LOGIN_WINDOW_MS) {
+    loginAttemptStore.delete(key);
+    return { blocked: false };
+  }
+
+  return { blocked: false };
+}
+
+function recordFailedLoginAttempt(email: string): void {
+  const key = normalizeEmailForRateLimit(email);
+  const now = Date.now();
+  const existing = loginAttemptStore.get(key);
+  if (!existing || now - existing.firstAttemptAt > LOGIN_WINDOW_MS) {
+    loginAttemptStore.set(key, { count: 1, firstAttemptAt: now });
+    return;
+  }
+
+  const nextCount = existing.count + 1;
+  const lockedUntil = nextCount >= LOGIN_MAX_ATTEMPTS ? now + LOGIN_LOCKOUT_MS : undefined;
+  loginAttemptStore.set(key, { ...existing, count: nextCount, lockedUntil });
+}
+
+function clearFailedLoginAttempts(email: string): void {
+  loginAttemptStore.delete(normalizeEmailForRateLimit(email));
+}
+
+// Development mode authentication bypass
+const devAuth = (middleware: any) => {
+  return async (req: any, res: any, next: any) => {
+    if (isDevAuthBypassEnabled(req)) {
+      req.user = { claims: { sub: 'dev-user-001' } };
+      req.isAuthenticated = () => true;
+      return next();
+    }
+    return middleware(req, res, next);
+  };
+};
+
+type ItransService = {
+  code: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+type ItransClaimPayload = {
+  offchainPayload: {
+    patientId: string;
+    providerId: string;
+    services: ItransService[];
+    totalAmount: number;
+  };
+  providerSignature: string;
+};
+
+type ItransWorkflowSubmitPayload = {
+  insurerAddress: string;
+  offchainPayload: {
+    patientId: string;
+    providerId: string;
+    insurerId?: string;
+    services: ItransService[];
+    totalAmount: number;
+    notes?: string;
+    type?: 'claim' | 'preauth';
+  };
+  providerSignature: string;
+  externalRequestId?: string;
+};
+
+function getItransApiBaseUrl(): string {
+  return (process.env.ITRANS_API_URL || "http://127.0.0.1:3002").replace(/\/+$/, "");
+}
+
+function getWorkflowInsurerAddress(inputAddress?: unknown): string {
+  const candidate = String(inputAddress || process.env.ITRANS_WORKFLOW_INSURER_ADDRESS || '').trim();
+  if (candidate) {
+    return candidate;
+  }
+  // Safe local default for development/demo only.
+  return '0x1111111111111111111111111111111111111111';
+}
+
+function getItransProviderSignatureSecret(): string {
+  const secret =
+    process.env.ITRANS_PROVIDER_SIGNATURE_HMAC_SECRET ||
+    process.env.PROVIDER_SIGNATURE_HMAC_SECRET ||
+    '';
+
+  if (secret.length < 32) {
+    throw new Error('ITRANS_PROVIDER_SIGNATURE_HMAC_SECRET must be set and at least 32 characters');
+  }
+
+  return secret;
+}
+
+function buildItransProviderSignature(offchainPayload: unknown): string {
+  const secret = getItransProviderSignatureSecret();
+  return crypto.createHmac('sha256', secret).update(JSON.stringify(offchainPayload)).digest('hex');
+}
+
+function secureCompareHex(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, 'utf-8');
+  const bBuf = Buffer.from(b, 'utf-8');
+  const maxLen = Math.max(aBuf.length, bBuf.length);
+  if (maxLen === 0) {
+    return false;
+  }
+  const aPadded = Buffer.alloc(maxLen);
+  const bPadded = Buffer.alloc(maxLen);
+  aBuf.copy(aPadded);
+  bBuf.copy(bPadded);
+  return crypto.timingSafeEqual(aPadded, bPadded) && aBuf.length === bBuf.length;
+}
+
+function isItransClaimsMutation(method: "GET" | "POST", path: string): boolean {
+  return method === "POST" && path.startsWith('/claims');
+}
+
+function isItransWorkflowCall(path: string): boolean {
+  return path.startsWith('/workflow');
+}
+
+function getItransHeaders(method: "GET" | "POST", path: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (isItransClaimsMutation(method, path)) {
+    const claimsApiKey = process.env.ITRANS_CLAIMS_API_KEY;
+    if (!claimsApiKey) {
+      throw new Error('ITRANS_CLAIMS_API_KEY is required for iTrans claim mutation routes');
+    }
+    headers['x-api-key'] = claimsApiKey;
+  }
+
+  if (isItransWorkflowCall(path)) {
+    const workflowApiKey = process.env.ITRANS_WORKFLOW_API_KEY;
+    if (!workflowApiKey) {
+      throw new Error('ITRANS_WORKFLOW_API_KEY is required for iTrans workflow routes');
+    }
+    headers['x-api-key'] = workflowApiKey;
+  }
+
+  return headers;
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function mapCodesToServices(codes: unknown, totalAmount: number): ItransService[] {
+  if (!Array.isArray(codes) || codes.length === 0) {
+    return [];
+  }
+
+  const services: ItransService[] = [];
+
+  for (const rawCode of codes) {
+    if (typeof rawCode === "string") {
+      services.push({
+        code: rawCode,
+        description: "Service",
+        quantity: 1,
+        unitPrice: totalAmount,
+      });
+      continue;
+    }
+
+    if (rawCode && typeof rawCode === "object") {
+      const codeObj = rawCode as Record<string, unknown>;
+      const code = String(codeObj.code || codeObj.procedure || "UNKNOWN");
+      const quantity = Math.max(1, toNumber(codeObj.quantity, 1));
+      const unitPrice = Math.max(0, toNumber(codeObj.unitPrice, totalAmount));
+      services.push({
+        code,
+        description: String(codeObj.description || "Service"),
+        quantity,
+        unitPrice,
+      });
+    }
+  }
+
+  return services;
+}
+
+function mapToItransPayload(input: any): ItransClaimPayload {
+  if (input?.offchainPayload && input?.providerSignature) {
+    const payload = input as ItransClaimPayload;
+    const providerSignature = buildItransProviderSignature(payload.offchainPayload);
+    return {
+      ...payload,
+      providerSignature,
+    };
+  }
+
+  const patientId = String(input?.patientId || "");
+  const providerId = String(input?.providerId || "");
+  const totalAmount = Math.max(0, toNumber(input?.totalAmount ?? input?.amount, 0));
+
+  const servicesFromBody = Array.isArray(input?.services) ? input.services : [];
+  const normalizedServices: ItransService[] = servicesFromBody
+    .map((service: any) => ({
+      code: String(service?.code || "UNKNOWN"),
+      description: String(service?.description || "Service"),
+      quantity: Math.max(1, toNumber(service?.quantity, 1)),
+      unitPrice: Math.max(0, toNumber(service?.unitPrice, 0)),
+    }))
+    .filter((service: ItransService) => service.code.length > 0);
+
+  const services = normalizedServices.length > 0
+    ? normalizedServices
+    : mapCodesToServices(input?.codes, totalAmount);
+
+  const offchainPayload = {
+    patientId,
+    providerId,
+    services,
+    totalAmount,
+  };
+  const providerSignature = buildItransProviderSignature(offchainPayload);
+
+  if (!patientId || !providerId || totalAmount <= 0 || services.length === 0) {
+    throw new Error(
+      "Invalid payload for iTrans: require patientId, providerId, totalAmount > 0, and services[]"
+    );
+  }
+
+  return {
+    offchainPayload,
+    providerSignature,
+  };
+}
+
+function mapToItransWorkflowPayload(input: any): ItransWorkflowSubmitPayload {
+  if (input?.offchainPayload && input?.providerSignature && input?.insurerAddress) {
+    const payload = input as ItransWorkflowSubmitPayload;
+    const providerSignature = buildItransProviderSignature(payload.offchainPayload);
+    return {
+      ...payload,
+      providerSignature,
+    };
+  }
+
+  const claimPayload = mapToItransPayload(input);
+  const insurerAddress = getWorkflowInsurerAddress(input?.insurerAddress);
+  const offchainPayload: ItransWorkflowSubmitPayload['offchainPayload'] = {
+    ...claimPayload.offchainPayload,
+    insurerId: input?.insurerId ? String(input.insurerId) : undefined,
+    notes: input?.notes ? String(input.notes) : undefined,
+    type: input?.type === 'preauth' ? 'preauth' : 'claim',
+  };
+  const providerSignature = buildItransProviderSignature(offchainPayload);
+
+  return {
+    insurerAddress,
+    offchainPayload,
+    providerSignature,
+    externalRequestId: input?.externalRequestId ? String(input.externalRequestId) : undefined,
+  };
+}
+
+async function forwardToItrans(
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown
+): Promise<{ status: number; responseBody: any }> {
+  const itransBaseUrl = getItransApiBaseUrl();
+  const url = `${itransBaseUrl}${path}`;
+
+  const response = await safeFetch(url, {
+    method,
+    headers: getItransHeaders(method, path),
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
+  });
+
+  const rawText = await response.text();
+  let responseBody: any = { raw: rawText };
+
+  if (rawText) {
+    try {
+      responseBody = JSON.parse(rawText);
+    } catch {
+      responseBody = { raw: rawText };
+    }
+  }
+
+  return { status: response.status, responseBody };
+}
+
+function getItransWebhookSigningSecret(): string {
+  const secret = process.env.ITRANS_WEBHOOK_SIGNING_SECRET || process.env.RELAY_WEBHOOK_SIGNING_SECRET || '';
+  if (secret.length < 32) {
+    throw new Error('ITRANS_WEBHOOK_SIGNING_SECRET must be set and at least 32 characters');
+  }
+  return secret;
+}
+
+function normalizeRelaySignature(value: string): string {
+  return value.trim().toLowerCase().replace(/^hmac-sha256=/, '');
+}
+
+function verifyItransWebhookSignature(req: any, bodyRaw: string): { valid: boolean; reason?: string } {
+  const signatureHeader = String(req.headers['x-itrans-relay-signature'] || '');
+  const timestampHeader = String(req.headers['x-itrans-relay-timestamp'] || '');
+
+  if (!signatureHeader || !timestampHeader) {
+    return { valid: false, reason: 'Missing signature headers' };
+  }
+
+  const timestampMs = Number.parseInt(timestampHeader, 10);
+  if (!Number.isFinite(timestampMs)) {
+    return { valid: false, reason: 'Invalid signature timestamp' };
+  }
+
+  const ageMs = Math.abs(Date.now() - timestampMs);
+  if (ageMs > ITRANS_WEBHOOK_MAX_AGE_MS) {
+    return { valid: false, reason: 'Signature timestamp expired' };
+  }
+
+  const providedSignature = normalizeRelaySignature(signatureHeader);
+  if (!/^[a-f0-9]{64}$/.test(providedSignature)) {
+    return { valid: false, reason: 'Invalid signature format' };
+  }
+
+  const secret = getItransWebhookSigningSecret();
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestampMs}.${bodyRaw}`)
+    .digest('hex');
+
+  if (!secureCompareHex(providedSignature, expectedSignature)) {
+    return { valid: false, reason: 'Signature verification failed' };
+  }
+
+  return { valid: true };
+}
+
+function mapWorkflowDecisionToClaimStatus(decision: unknown): 'paid' | 'denied' | 'infoRequested' | null {
+  if (decision === 'APPROVED') {
+    return 'paid';
+  }
+  if (decision === 'DENIED') {
+    return 'denied';
+  }
+  if (decision === 'NEEDS_INFO') {
+    return 'infoRequested';
+  }
+  return null;
+}
+
+function computeAutoSubmitRetryDelayMs(attempt: number): number {
+  const delay = ITRANS_AUTO_SUBMIT_BASE_DELAY_MS * Math.pow(2, Math.max(0, attempt - 1));
+  return Math.min(ITRANS_AUTO_SUBMIT_MAX_DELAY_MS, delay);
+}
+
+function cleanupAutoSubmitJobs(nowMs: number): void {
+  let removedAny = false;
+  for (const [jobId, job] of itransAutoSubmitJobs.entries()) {
+    const terminal = job.state === 'succeeded' || job.state === 'failed';
+    if (!terminal) {
+      continue;
+    }
+    if (nowMs - job.updatedAt < ITRANS_AUTO_SUBMIT_JOB_RETENTION_MS) {
+      continue;
+    }
+    itransAutoSubmitJobs.delete(jobId);
+    removedAny = true;
+    const mappedJobId = itransAutoSubmitJobByClaim.get(job.claimId);
+    if (mappedJobId === jobId) {
+      itransAutoSubmitJobByClaim.delete(job.claimId);
+    }
+  }
+  if (removedAny) {
+    persistItransAutoSubmitJobs();
+  }
+}
+
+function getNextRunnableAutoSubmitJob(nowMs: number): ItransAutoSubmitJob | null {
+  const jobs = Array.from(itransAutoSubmitJobs.values())
+    .filter((job) => (job.state === 'queued' || job.state === 'retrying') && job.nextAttemptAt <= nowMs)
+    .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt || a.createdAt - b.createdAt);
+  return jobs.length > 0 ? jobs[0] : null;
+}
+
+function getNextAutoSubmitDelayMs(nowMs: number): number | null {
+  const jobs = Array.from(itransAutoSubmitJobs.values())
+    .filter((job) => job.state === 'queued' || job.state === 'retrying')
+    .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt);
+  if (jobs.length === 0) {
+    return null;
+  }
+  return Math.max(0, jobs[0].nextAttemptAt - nowMs);
+}
+
+function scheduleItransAutoSubmitWorker(delayMs = 0): void {
+  const targetRunAt = Date.now() + Math.max(0, delayMs);
+  if (itransAutoSubmitWorkerTimer && targetRunAt >= itransAutoSubmitWorkerNextRunAt) {
+    return;
+  }
+
+  if (itransAutoSubmitWorkerTimer) {
+    clearTimeout(itransAutoSubmitWorkerTimer);
+    itransAutoSubmitWorkerTimer = null;
+  }
+
+  itransAutoSubmitWorkerNextRunAt = targetRunAt;
+  itransAutoSubmitWorkerTimer = setTimeout(() => {
+    itransAutoSubmitWorkerTimer = null;
+    itransAutoSubmitWorkerNextRunAt = 0;
+    void runItransAutoSubmitWorker();
+  }, Math.max(0, targetRunAt - Date.now()));
+}
+
+async function processItransAutoSubmitJob(job: ItransAutoSubmitJob): Promise<void> {
+  job.state = 'running';
+  job.attempt += 1;
+  job.updatedAt = Date.now();
+  persistItransAutoSubmitJobs();
+
+  let upstreamStatus: number | undefined;
+  let responseBody: any;
+
+  try {
+    const claim = await storage.getClaim(job.claimId);
+    if (!claim) {
+      throw new Error(`Claim ${job.claimId} no longer exists`);
+    }
+
+    const workflowPayload = mapToItransWorkflowPayload({
+      patientId: claim.patientId,
+      providerId: claim.providerId,
+      insurerId: claim.insurerId,
+      amount: Number(claim.amount),
+      codes: claim.codes,
+      notes: claim.notes,
+      type: claim.type,
+      externalRequestId: claim.id,
+    });
+    workflowPayload.offchainPayload.type = claim.type === 'preauth' ? 'preauth' : 'claim';
+
+    const workflowPath = claim.type === 'preauth' ? '/workflow/preauths' : '/workflow/claims';
+    const upstreamResponse = await forwardToItrans('POST', workflowPath, workflowPayload);
+    upstreamStatus = upstreamResponse.status;
+    responseBody = upstreamResponse.responseBody;
+
+    if (upstreamStatus < 200 || upstreamStatus >= 300) {
+      throw new Error(
+        `iTrans workflow submission rejected with status ${upstreamStatus}: ${
+          responseBody?.error || responseBody?.message || 'unknown error'
+        }`
+      );
+    }
+
+    const requestId = String(responseBody?.requestId || claim.id);
+    const requestIdHash =
+      typeof responseBody?.requestIdHash === 'string' ? responseBody.requestIdHash : undefined;
+
+    await storage.updateClaim(claim.id, {
+      status: 'submitted',
+      externalId: requestId,
+      referenceNumber: requestIdHash || requestId,
+    });
+
+    try {
+      await storage.createAuditEvent({
+        orgId: claim.orgId,
+        actorUserId: claim.createdBy,
+        type: 'itrans_workflow_auto_submitted_async',
+        details: {
+          claimId: claim.id,
+          attempt: job.attempt,
+          maxAttempts: job.maxAttempts,
+          workflowPath,
+          upstreamStatus,
+          requestId,
+          requestIdHash,
+        },
+        ip: null,
+        userAgent: 'itrans-auto-submit-queue',
+      });
+    } catch (auditError) {
+      console.error('Failed to write async auto-submit success audit event:', auditError);
+    }
+
+    job.state = 'succeeded';
+    job.lastError = undefined;
+    job.lastUpstreamStatus = upstreamStatus;
+    job.requestId = requestId;
+    job.requestIdHash = requestIdHash;
+    job.updatedAt = Date.now();
+    persistItransAutoSubmitJobs();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const claim = await storage.getClaim(job.claimId);
+
+    job.lastError = errorMessage;
+    job.lastUpstreamStatus = upstreamStatus;
+    job.updatedAt = Date.now();
+
+    if (job.attempt >= job.maxAttempts) {
+      job.state = 'failed';
+      persistItransAutoSubmitJobs();
+      if (claim) {
+        try {
+          await storage.updateClaim(claim.id, { status: 'pending' });
+          await storage.createAuditEvent({
+            orgId: claim.orgId,
+            actorUserId: claim.createdBy,
+            type: 'itrans_workflow_auto_submit_failed_async',
+            details: {
+              claimId: claim.id,
+              attempt: job.attempt,
+              maxAttempts: job.maxAttempts,
+              upstreamStatus,
+              responseBody,
+              error: errorMessage,
+            },
+            ip: null,
+            userAgent: 'itrans-auto-submit-queue',
+          });
+        } catch (failureAuditError) {
+          console.error('Failed to persist async auto-submit failure details:', failureAuditError);
+        }
+      }
+      return;
+    }
+
+    const retryDelayMs = computeAutoSubmitRetryDelayMs(job.attempt);
+    job.state = 'retrying';
+    job.nextAttemptAt = Date.now() + retryDelayMs;
+    persistItransAutoSubmitJobs();
+    if (claim) {
+      try {
+        await storage.updateClaim(claim.id, { status: 'pending' });
+        await storage.createAuditEvent({
+          orgId: claim.orgId,
+          actorUserId: claim.createdBy,
+          type: 'itrans_workflow_auto_submit_retry_scheduled_async',
+          details: {
+            claimId: claim.id,
+            attempt: job.attempt,
+            maxAttempts: job.maxAttempts,
+            nextRetryInMs: retryDelayMs,
+            upstreamStatus,
+            responseBody,
+            error: errorMessage,
+          },
+          ip: null,
+          userAgent: 'itrans-auto-submit-queue',
+        });
+      } catch (retryAuditError) {
+        console.error('Failed to persist async auto-submit retry details:', retryAuditError);
+      }
+    }
+  }
+}
+
+async function runItransAutoSubmitWorker(): Promise<void> {
+  if (itransAutoSubmitWorkerRunning) {
+    return;
+  }
+
+  itransAutoSubmitWorkerRunning = true;
+  try {
+    while (true) {
+      const nowMs = Date.now();
+      cleanupAutoSubmitJobs(nowMs);
+      const nextJob = getNextRunnableAutoSubmitJob(nowMs);
+      if (!nextJob) {
+        break;
+      }
+      await processItransAutoSubmitJob(nextJob);
+    }
+  } finally {
+    itransAutoSubmitWorkerRunning = false;
+    const delayMs = getNextAutoSubmitDelayMs(Date.now());
+    if (delayMs !== null) {
+      scheduleItransAutoSubmitWorker(delayMs);
+    }
+  }
+}
+
+function enqueueItransAutoSubmitJob(claim: {
+  id: string;
+  orgId: string;
+  type: string;
+}): ItransAutoSubmitJob {
+  cleanupAutoSubmitJobs(Date.now());
+
+  const existingJobId = itransAutoSubmitJobByClaim.get(claim.id);
+  if (existingJobId) {
+    const existingJob = itransAutoSubmitJobs.get(existingJobId);
+    if (existingJob && existingJob.state !== 'succeeded' && existingJob.state !== 'failed') {
+      scheduleItransAutoSubmitWorker(Math.max(0, existingJob.nextAttemptAt - Date.now()));
+      return existingJob;
+    }
+  }
+
+  if (itransAutoSubmitJobs.size >= ITRANS_AUTO_SUBMIT_QUEUE_LIMIT) {
+    throw new Error(`iTrans auto-submit queue is full (limit=${ITRANS_AUTO_SUBMIT_QUEUE_LIMIT})`);
+  }
+
+  const jobId = crypto.randomUUID();
+  const nowMs = Date.now();
+  const job: ItransAutoSubmitJob = {
+    jobId,
+    claimId: claim.id,
+    orgId: claim.orgId,
+    claimType: claim.type === 'preauth' ? 'preauth' : 'claim',
+    attempt: 0,
+    maxAttempts: ITRANS_AUTO_SUBMIT_MAX_ATTEMPTS,
+    nextAttemptAt: nowMs,
+    state: 'queued',
+    createdAt: nowMs,
+    updatedAt: nowMs,
+  };
+
+  itransAutoSubmitJobs.set(jobId, job);
+  itransAutoSubmitJobByClaim.set(claim.id, jobId);
+  persistItransAutoSubmitJobs();
+  scheduleItransAutoSubmitWorker(0);
+  return job;
+}
+
+function getItransAutoSubmitQueueSnapshot(limit = 50, orgId?: string): {
+  stats: Record<string, number>;
+  jobs: Array<Record<string, unknown>>;
+} {
+  cleanupAutoSubmitJobs(Date.now());
+  const filteredJobs = Array.from(itransAutoSubmitJobs.values())
+    .filter((job) => (orgId ? job.orgId === orgId : true))
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  const stats = {
+    queued: filteredJobs.filter((job) => job.state === 'queued').length,
+    running: filteredJobs.filter((job) => job.state === 'running').length,
+    retrying: filteredJobs.filter((job) => job.state === 'retrying').length,
+    succeeded: filteredJobs.filter((job) => job.state === 'succeeded').length,
+    failed: filteredJobs.filter((job) => job.state === 'failed').length,
+    total: filteredJobs.length,
+  };
+
+  const jobs = filteredJobs.slice(0, Math.max(1, Math.min(limit, 200))).map((job) => ({
+    jobId: job.jobId,
+    claimId: job.claimId,
+    claimType: job.claimType,
+    state: job.state,
+    attempt: job.attempt,
+    maxAttempts: job.maxAttempts,
+    nextAttemptAt: new Date(job.nextAttemptAt).toISOString(),
+    createdAt: new Date(job.createdAt).toISOString(),
+    updatedAt: new Date(job.updatedAt).toISOString(),
+    lastError: job.lastError || null,
+    lastUpstreamStatus: job.lastUpstreamStatus ?? null,
+    requestId: job.requestId || null,
+    requestIdHash: job.requestIdHash || null,
+  }));
+
+  return { stats, jobs };
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  validateItransProductionSecurityConfiguration();
+
+  const startupDelayMs = getNextAutoSubmitDelayMs(Date.now());
+  if (startupDelayMs !== null) {
+    scheduleItransAutoSubmitWorker(startupDelayMs);
+  }
+
   // Health check routes BEFORE CORS (no auth/CSRF required)
   app.get('/healthz', (_req, res) => res.status(200).send('ok'));
   app.get('/readyz', async (_req, res) => {
@@ -126,6 +903,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EDI Sandbox Blocking test endpoint
   app.get('/api/test-edi-block', async (req, res) => {
     try {
+      if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_NETWORK_TEST_ENDPOINTS !== 'true') {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      if (!isLocalRequest(req)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       const targetUrl = req.query.url as string;
       
       if (!targetUrl) {
@@ -177,7 +961,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           statusText: response.statusText,
           ok: response.ok,
           responseTimeMs: responseTime,
-          headers: Object.fromEntries([...response.headers.entries()].slice(0, 5)),
+          headers: Object.fromEntries(Array.from(response.headers.entries()).slice(0, 5)),
           preview: responsePreview.includes('SANDBOX_BLOCKED') ? 'SANDBOX_BLOCKED' : responsePreview.substring(0, 100)
         };
         
@@ -229,10 +1013,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // SKIP AUTH COMPLETELY IN DEVELOPMENT MODE
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true') {
     console.log('🚀 Development mode: Authentication bypassed');
     // Create a mock auth middleware that always allows access
     app.use((req: any, res, next) => {
+      if (!isLocalRequest(req)) {
+        return res.status(403).json({ message: 'Dev auth bypass is localhost-only' });
+      }
       req.user = { 
         claims: { 
           sub: 'dev-user-001',
@@ -250,13 +1037,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await setupAuth(app);
     } catch (error) {
       console.error('Auth setup failed:', error);
-      // Fallback for auth failure
-      app.use((req: any, res, next) => {
-        req.user = { claims: { sub: 'demo-user' } };
-        next();
-      });
+      throw error;
     }
   }
+
+  // iTrans workflow relay callback endpoint (no session auth; validated by HMAC signature + idempotency key)
+  app.post('/api/itrans/webhooks/workflow', apiLimiter, async (req: any, res) => {
+    try {
+      const idempotencyKey = String(req.headers['idempotency-key'] || req.headers['x-itrans-relay-event-id'] || '');
+      if (!idempotencyKey) {
+        return res.status(400).json({ message: 'Missing idempotency key' });
+      }
+
+      const rawBody = typeof req.rawBody === 'string' ? req.rawBody : '';
+      if (rawBody.length === 0) {
+        return res.status(500).json({
+          message: 'Webhook raw body unavailable; verify express.json raw body capture middleware',
+        });
+      }
+      const verification = verifyItransWebhookSignature(req, rawBody);
+      if (!verification.valid) {
+        return res.status(401).json({ message: verification.reason || 'Invalid webhook signature' });
+      }
+
+      if (itransWebhookIdempotencyStore.has(idempotencyKey)) {
+        return res.status(200).json({ ok: true, duplicate: true });
+      }
+
+      const payload = req.body as ItransRelayWebhookPayload;
+      if (!payload || typeof payload !== 'object' || !payload.eventType || !payload.requestIdHash) {
+        return res.status(400).json({ message: 'Invalid webhook payload' });
+      }
+      if (!['REQUEST_SUBMITTED', 'REQUEST_ACKNOWLEDGED', 'REQUEST_ADJUDICATED'].includes(payload.eventType)) {
+        return res.status(400).json({ message: 'Unsupported event type' });
+      }
+      if (payload.eventId && payload.eventId !== idempotencyKey) {
+        return res.status(400).json({ message: 'Idempotency key does not match payload eventId' });
+      }
+
+      // Resolve claim by workflow request hash first, then legacy external id fallback.
+      const claim =
+        await storage.getClaimByReferenceNumber(payload.requestIdHash) ||
+        await storage.getClaimByExternalId(payload.requestIdHash);
+
+      if (!claim) {
+        return res.status(503).json({
+          ok: false,
+          retryable: true,
+          message: 'No matching claim found yet; retry later',
+        });
+      }
+
+      const applyClaimStatus = async (nextStatus: 'submitted' | 'pending' | 'paid' | 'denied' | 'infoRequested') => {
+        if (claim.status === nextStatus) {
+          return;
+        }
+
+        await storage.updateClaim(claim.id, {
+          status: nextStatus,
+          referenceNumber: payload.requestIdHash,
+        });
+
+        try {
+          const claimOwner = await storage.getUser(claim.createdBy);
+          if (claimOwner?.notificationsEnabled) {
+            await PushNotificationService.sendClaimStatusNotification(
+              claim.id,
+              nextStatus,
+              claim.createdBy
+            );
+          }
+        } catch (notificationError) {
+          console.error('Failed to send webhook-driven claim status notification:', notificationError);
+        }
+      };
+
+      if (payload.eventType === 'REQUEST_ACKNOWLEDGED') {
+        await applyClaimStatus('pending');
+      }
+
+      if (payload.eventType === 'REQUEST_ADJUDICATED') {
+        const nextStatus = mapWorkflowDecisionToClaimStatus(payload.data?.decision);
+        if (nextStatus) {
+          await applyClaimStatus(nextStatus);
+        }
+      }
+
+      if (payload.eventType === 'REQUEST_SUBMITTED') {
+        await applyClaimStatus('submitted');
+      }
+
+      await storage.createAuditEvent({
+        orgId: claim.orgId,
+        actorUserId: null,
+        type: 'itrans_webhook_processed',
+        details: {
+          eventId: idempotencyKey,
+          eventType: payload.eventType,
+          requestIdHash: payload.requestIdHash,
+          claimId: claim.id,
+        },
+        ip: req.ip,
+        userAgent: req.get('User-Agent') || 'itrans-relay',
+      });
+
+      itransWebhookIdempotencyStore.markProcessed(idempotencyKey);
+      itransWebhookIdempotencyStore.prune(ITRANS_WEBHOOK_IDEMPOTENCY_RETENTION_MS);
+      itransWebhookIdempotencyStore.persist();
+
+      return res.status(200).json({ ok: true, claimId: claim.id, eventType: payload.eventType });
+    } catch (error) {
+      console.error('Error processing iTrans workflow webhook:', error);
+      return res.status(500).json({
+        message: 'Failed to process iTrans workflow webhook',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 
   // CSRF token endpoint
   app.get('/api/auth/csrf', authLimiter, (req: any, res) => {
@@ -264,7 +1161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Apply CSRF protection to all state-changing routes (skip in dev)
-  if (process.env.NODE_ENV !== 'development') {
+  if (!(process.env.NODE_ENV === 'development' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true')) {
     app.use(csrfProtection);
   }
   
@@ -277,9 +1174,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     const { email, password } = req.body;
+    if (typeof email !== 'string' || typeof password !== 'string' || email.length === 0 || password.length === 0) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const attemptState = getLoginAttemptState(email);
+    if (attemptState.blocked) {
+      return res.status(429).json({
+        message: "Too many failed login attempts. Try again later.",
+        retryAfter: attemptState.retryAfterSec,
+      });
+    }
     
-    // Check for test credentials
-    if (email === 'test@staging.local' && password === 'testpass123') {
+    // Optional test credentials (disabled by default)
+    const allowTestLogin = process.env.ENABLE_TEST_LOGIN === 'true';
+    const testEmail = process.env.TEST_LOGIN_EMAIL;
+    const testPassword = process.env.TEST_LOGIN_PASSWORD;
+    if (allowTestLogin && testEmail && testPassword && email === testEmail && password === testPassword) {
       // Create or get test user and test data
       const testUser = await storage.upsertUser({
         id: 'test-user-001',
@@ -294,13 +1205,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let testOrg = await storage.getOrganization('11111111-1111-1111-1111-111111111111');
       if (!testOrg) {
         testOrg = await storage.createOrganization({
-          id: '11111111-1111-1111-1111-111111111111',
           name: 'Test Organization',
-          type: 'clinic',
-          taxId: 'TEST123',
-          phone: '555-0100',
-          email: 'test@org.local',
-          address: '123 Test St'
+          externalId: 'test-org-001',
+          province: 'ON',
+          preferredLanguage: 'en-CA'
         });
       }
       
@@ -311,7 +1219,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const patients = await storage.getPatients(testOrg.id, { id: '11111111-1111-1111-1111-111111111111' });
       if (patients.length === 0) {
         await storage.createPatient({
-          id: '11111111-1111-1111-1111-111111111111',
           orgId: testOrg.id,
           name: 'Test Patient',
           identifiers: { healthCardNumber: 'TEST123456' },
@@ -325,7 +1232,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const providers = await storage.getProviders(testOrg.id, { id: '22222222-2222-2222-2222-222222222222' });
       if (providers.length === 0) {
         await storage.createProvider({
-          id: '22222222-2222-2222-2222-222222222222',
           orgId: testOrg.id,
           name: 'Test Provider',
           licenceNumber: 'TEST789',
@@ -356,6 +1262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       req.isAuthenticated = () => true;
       
+      clearFailedLoginAttempts(email);
       return res.status(200).json({
         user: { ...testUser, orgId: testOrg.id },
         token: 'test-session-token-' + Date.now()
@@ -383,6 +1290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             req.isAuthenticated = () => true;
             
             // Return success response with token
+            clearFailedLoginAttempts(email);
             return res.status(200).json({
               token: 'bearer-' + user.id + '-' + Date.now(),
               user: {
@@ -404,12 +1312,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error during password authentication:", error);
     }
     
+    recordFailedLoginAttempt(email);
     return res.status(401).json({ message: "Invalid credentials" });
   });
   
   app.get('/api/auth/user', authLimiter, async (req: any, res) => {
     // Development mode bypass for Replit preview
-    if (process.env.NODE_ENV === 'development' && !req.isAuthenticated()) {
+    if (isDevAuthBypassEnabled(req) && !req.isAuthenticated()) {
       // Get or create demo organization
       let demoOrg = await storage.getOrganizationByExternalId('demo-org');
       if (!demoOrg) {
@@ -1228,8 +2137,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const claim = await storage.createClaim(validatedData);
       
       await auditLog(req, 'claim_created', { claimId: claim.id, type: claim.type });
-      
-      res.status(201).json(claim);
+
+      const autoSubmitEnabled = process.env.ITRANS_AUTO_SUBMIT_ENABLED === 'true';
+      if (!autoSubmitEnabled) {
+        return res.status(201).json(claim);
+      }
+
+      try {
+        const job = enqueueItransAutoSubmitJob({
+          id: claim.id,
+          orgId: claim.orgId,
+          type: claim.type,
+        });
+        const pendingClaim = await storage.updateClaim(claim.id, { status: 'pending' });
+
+        await auditLog(req, 'itrans_workflow_auto_submit_queued', {
+          target: getItransApiBaseUrl(),
+          claimId: claim.id,
+          jobId: job.jobId,
+          state: job.state,
+          attempt: job.attempt,
+          maxAttempts: job.maxAttempts,
+        });
+
+        return res.status(201).json({
+          ...(pendingClaim || claim),
+          itransSubmission: {
+            status: job.state,
+            queued: true,
+            jobId: job.jobId,
+            attempt: job.attempt,
+            maxAttempts: job.maxAttempts,
+          },
+        });
+      } catch (queueError) {
+        await auditLog(req, 'itrans_workflow_auto_submit_queue_error', {
+          target: getItransApiBaseUrl(),
+          claimId: claim.id,
+          error: queueError instanceof Error ? queueError.message : String(queueError),
+        });
+        return res.status(201).json({
+          ...claim,
+          itransSubmission: {
+            status: 'failed_to_queue',
+            queued: false,
+            error: queueError instanceof Error ? queueError.message : String(queueError),
+          },
+        });
+      }
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });
@@ -1280,6 +2235,190 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating claim:", error);
       res.status(500).json({ message: "Failed to update claim" });
+    }
+  });
+
+  app.get('/api/itrans/auto-submit/queue', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.orgId) {
+        return res.status(400).json({ message: "User not associated with organization" });
+      }
+
+      const rawLimit = Array.isArray(req.query?.limit) ? req.query.limit[0] : req.query?.limit;
+      const limit = parsePositiveIntEnv(typeof rawLimit === 'string' ? rawLimit : undefined, 50);
+      const snapshot = getItransAutoSubmitQueueSnapshot(limit, user.orgId);
+
+      return res.json({
+        config: {
+          maxAttempts: ITRANS_AUTO_SUBMIT_MAX_ATTEMPTS,
+          baseDelayMs: ITRANS_AUTO_SUBMIT_BASE_DELAY_MS,
+          maxDelayMs: ITRANS_AUTO_SUBMIT_MAX_DELAY_MS,
+          queueLimit: ITRANS_AUTO_SUBMIT_QUEUE_LIMIT,
+        },
+        ...snapshot,
+      });
+    } catch (error) {
+      console.error('Error fetching iTrans auto-submit queue status:', error);
+      return res.status(500).json({
+        message: 'Failed to fetch iTrans auto-submit queue status',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // iTrans bridge API
+  app.post('/api/itrans/claims', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const payload = mapToItransPayload(req.body);
+      const { status, responseBody } = await forwardToItrans("POST", "/claims", payload);
+      await auditLog(req, 'itrans_claim_submitted', {
+        target: getItransApiBaseUrl(),
+        upstreamStatus: status,
+        claimId: responseBody?.claimId,
+      });
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error forwarding claim to iTrans:", error);
+      return res.status(502).json({
+        message: "Failed to submit claim to iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/api/itrans/claims/:claimId', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const { status, responseBody } = await forwardToItrans("GET", `/claims/${req.params.claimId}`);
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error getting iTrans claim summary:", error);
+      return res.status(502).json({
+        message: "Failed to fetch claim summary from iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/itrans/claims/:claimId/finalize', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const { status, responseBody } = await forwardToItrans("POST", `/claims/${req.params.claimId}/finalize`);
+      await auditLog(req, 'itrans_claim_finalize', {
+        target: getItransApiBaseUrl(),
+        claimId: req.params.claimId,
+        upstreamStatus: status,
+      });
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error finalizing iTrans claim:", error);
+      return res.status(502).json({
+        message: "Failed to finalize claim in iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/itrans/claims/:claimId/settle', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const { status, responseBody } = await forwardToItrans("POST", `/claims/${req.params.claimId}/settle`);
+      await auditLog(req, 'itrans_claim_settle', {
+        target: getItransApiBaseUrl(),
+        claimId: req.params.claimId,
+        upstreamStatus: status,
+      });
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error settling iTrans claim:", error);
+      return res.status(502).json({
+        message: "Failed to settle claim in iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/api/itrans/claims/:claimId/anchor/status', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const { status, responseBody } = await forwardToItrans("GET", `/claims/${req.params.claimId}/anchor/status`);
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error getting iTrans anchor status:", error);
+      return res.status(502).json({
+        message: "Failed to fetch anchor status from iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/itrans/workflow/claims', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const payload = mapToItransWorkflowPayload(req.body);
+      payload.offchainPayload.type = 'claim';
+      const { status, responseBody } = await forwardToItrans("POST", "/workflow/claims", payload);
+
+      if (status >= 200 && status < 300 && payload.externalRequestId) {
+        await storage.updateClaim(payload.externalRequestId, {
+          status: 'submitted',
+          externalId: String(responseBody?.requestId || payload.externalRequestId),
+          referenceNumber: String(responseBody?.requestIdHash || responseBody?.requestId || payload.externalRequestId),
+        });
+      }
+
+      await auditLog(req, 'itrans_workflow_claim_submitted', {
+        target: getItransApiBaseUrl(),
+        upstreamStatus: status,
+        requestId: responseBody?.requestId,
+        requestIdHash: responseBody?.requestIdHash,
+      });
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error forwarding workflow claim to iTrans:", error);
+      return res.status(502).json({
+        message: "Failed to submit workflow claim to iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/itrans/workflow/preauths', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const payload = mapToItransWorkflowPayload(req.body);
+      payload.offchainPayload.type = 'preauth';
+      const { status, responseBody } = await forwardToItrans("POST", "/workflow/preauths", payload);
+
+      if (status >= 200 && status < 300 && payload.externalRequestId) {
+        await storage.updateClaim(payload.externalRequestId, {
+          status: 'submitted',
+          externalId: String(responseBody?.requestId || payload.externalRequestId),
+          referenceNumber: String(responseBody?.requestIdHash || responseBody?.requestId || payload.externalRequestId),
+        });
+      }
+
+      await auditLog(req, 'itrans_workflow_preauth_submitted', {
+        target: getItransApiBaseUrl(),
+        upstreamStatus: status,
+        requestId: responseBody?.requestId,
+        requestIdHash: responseBody?.requestIdHash,
+      });
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error forwarding workflow preauth to iTrans:", error);
+      return res.status(502).json({
+        message: "Failed to submit workflow preauth to iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get('/api/itrans/workflow/requests/:requestId', apiLimiter, devAuth(isAuthenticated), async (req: any, res) => {
+    try {
+      const { status, responseBody } = await forwardToItrans("GET", `/workflow/requests/${req.params.requestId}`);
+      return res.status(status).json(responseBody);
+    } catch (error) {
+      console.error("Error getting iTrans workflow request:", error);
+      return res.status(502).json({
+        message: "Failed to fetch workflow request from iTrans",
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   });
 
@@ -2008,8 +3147,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get real recent claims
       const claims = await storage.getClaims(user.orgId);
+      const claimTimestampMs = (value: Date | null | undefined): number => (value ? new Date(value).getTime() : 0);
       const recentClaims = claims
-        .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+        .sort((a, b) => claimTimestampMs(b.updatedAt || b.createdAt) - claimTimestampMs(a.updatedAt || a.createdAt))
         .slice(0, 5);
 
       if (recentClaims.length === 0) {

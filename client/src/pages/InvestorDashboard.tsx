@@ -117,7 +117,7 @@ export default function InvestorDashboard() {
   });
 
   // Auto-refresh activity feed
-  const { data: activityData } = useQuery({
+  const { data: activityData } = useQuery<any[]>({
     queryKey: ["/api/investor/activity"],
     refetchInterval: 5000, // Refresh every 5 seconds
   });

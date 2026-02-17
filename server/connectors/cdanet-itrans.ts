@@ -13,8 +13,6 @@ import { eq } from 'drizzle-orm';
 import type { Claim } from '../../shared/schema';
 
 export class CDAnetITransConnector extends BaseConnector {
-  protected config: any;
-
   async validate(claim: Claim): Promise<void> {
     this.debug('Validating claim for CDAnet submission', { claimId: claim.id });
     

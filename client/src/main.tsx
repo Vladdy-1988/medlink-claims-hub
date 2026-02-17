@@ -39,14 +39,14 @@ try {
     const root = createRoot(rootElement);
     root.render(
       <ErrorBoundary
-        fallback={({ error }) => (
+        fallback={({ error }: { error: unknown }) => (
           <div style={{ padding: '20px', textAlign: 'center' }}>
             <h1>Application Error</h1>
             <p>Something went wrong. Please try refreshing the page.</p>
-            {process.env.NODE_ENV === 'development' && (
+            {import.meta.env.MODE === 'development' && (
               <details style={{ marginTop: '20px', textAlign: 'left' }}>
                 <summary>Error details (development only)</summary>
-                <pre>{error?.message || 'Unknown error'}</pre>
+                <pre>{error instanceof Error ? error.message : 'Unknown error'}</pre>
               </details>
             )}
           </div>

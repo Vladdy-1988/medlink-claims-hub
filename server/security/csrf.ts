@@ -41,6 +41,11 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     return next();
   }
 
+  // Skip CSRF for signed machine-to-machine webhooks
+  if (req.path === '/api/itrans/webhooks/workflow') {
+    return next();
+  }
+
   // Get token from cookie
   const cookieToken = req.cookies[CSRF_COOKIE_NAME];
   

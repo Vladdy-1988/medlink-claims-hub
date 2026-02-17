@@ -3,6 +3,8 @@
  * In production, this would use Redis or a dedicated job queue system
  */
 
+import { storage } from '../storage';
+
 interface Job {
   id: string;
   type: 'submit' | 'poll-status';
@@ -89,7 +91,6 @@ class JobQueue {
     try {
       // Import connector dynamically to avoid circular dependencies
       const { getConnector } = await import('../connectors/base');
-      const { storage } = await import('../index');
       
       // Get the claim
       const claim = await storage.getClaim(job.claimId);
@@ -105,7 +106,7 @@ class JobQueue {
         const result = await connector.submitClaim(claim);
         
         // Update claim with external ID if successful
-        if (result.success && result.externalId) {
+        if (result.status === 'submitted' && result.externalId) {
           await storage.updateClaim(job.claimId, { 
             externalId: result.externalId,
             status: 'submitted' 

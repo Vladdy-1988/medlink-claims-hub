@@ -57,8 +57,8 @@ export async function readinessCheck(req: Request, res: Response): Promise<void>
     
     // Check storage availability
     try {
-      const storage = await import('../storage');
-      checks.storage = storage.default !== undefined;
+      const storageModule = await import('../storage');
+      checks.storage = storageModule.storage !== undefined;
     } catch (storageError) {
       checks.storage = false;
       errorDetails.push(`Storage: ${(storageError as Error).message}`);
@@ -77,7 +77,7 @@ export async function readinessCheck(req: Request, res: Response): Promise<void>
     }
     
     // Check Sentry availability
-    checks.sentry = !!process.env.SENTRY_DSN && Sentry.getCurrentHub() !== undefined;
+    checks.sentry = !!process.env.SENTRY_DSN && Sentry.isInitialized();
     
     // System resources check
     const memUsage = process.memoryUsage();

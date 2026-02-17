@@ -50,11 +50,10 @@ export default function MFAVerification({ onVerificationComplete, onCancel }: MF
 
   // Verify MFA code
   const verifyMutation = useMutation({
-    mutationFn: (data: { code?: string; backupCode?: string }) =>
-      apiRequest('/api/auth/mfa/verify', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+    mutationFn: async (data: { code?: string; backupCode?: string }): Promise<any> => {
+      const response = await apiRequest('/api/auth/mfa/verify', 'POST', data);
+      return response.json();
+    },
     onSuccess: (data: any) => {
       toast({
         title: 'Verification Successful',

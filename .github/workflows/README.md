@@ -41,6 +41,40 @@ This directory contains the GitHub Actions workflows for continuous integration 
 - Health check validation using `scripts/uptime.sh`
 - Vulnerability scanning with Trivy
 
+### 4. Cross-Repo iTrans E2E (`itrans-cross-repo-e2e.yml`)
+**Trigger:** Pull requests, pushes to core branches, nightly schedule, and manual dispatch
+
+**Checks:**
+- Boots local Postgres service
+- Checks out MedLink + `modern-itrans-core`
+- Runs `scripts/itrans-cross-repo-e2e.sh`
+- Enforces strict summary gate from `.local/itrans-cross-repo-e2e/result.json`:
+  - `status=pass`
+  - non-empty `claimId`
+  - non-empty `requestId`
+  - `deliveredCount>=1`
+- Uploads full execution logs/artifacts
+- Prints machine-readable summary from `.local/itrans-cross-repo-e2e/result.json`
+
+### 5. iTrans Staging Validation (`itrans-staging-validation.yml`)
+**Trigger:** Nightly schedule and manual dispatch
+
+**Checks:**
+- Runs functional cross-repo E2E gate
+- Runs deterministic relay failure-injection tests (dead-letter paths)
+- Optionally runs load/soak test gates when requested via manual dispatch
+- Enforces strict summary gate from `.local/itrans-staging-validation/summary.json`:
+  - `status=pass`
+  - `functionalE2E=pass`
+  - `failureInjection=pass`
+  - if `run_load_tests=true`, requires `load=pass` and `soak=pass`
+- Uploads consolidated artifacts and summary (`.local/itrans-staging-validation/summary.json`)
+
+## Launch gate source of truth
+
+- `DONE.md` defines scope lock and launch gates (G0-G7).
+- CI artifacts from the workflows above are the required evidence for G2 and G3 closure.
+
 ## Scripts
 
 ### `scripts/check-direct-sql.sh`

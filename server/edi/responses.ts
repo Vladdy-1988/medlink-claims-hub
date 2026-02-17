@@ -145,6 +145,10 @@ export function generatePreAuthResponse(
  * Generate remittance advice
  */
 function generateRemittanceAdvice(claim: Claim, insurerName: string, amount: number): any {
+  const claimCodes = Array.isArray(claim.codes) ? (claim.codes as Array<Record<string, unknown>>) : [];
+  const procedureCode =
+    typeof claimCodes[0]?.procedure === 'string' ? (claimCodes[0].procedure as string) : 'UNKNOWN';
+
   return {
     statementDate: new Date().toISOString(),
     statementNumber: generateSandboxReferenceNumber('RMT'),
@@ -160,7 +164,7 @@ function generateRemittanceAdvice(claim: Claim, insurerName: string, amount: num
     },
     serviceDetails: {
       dateOfService: claim.createdAt || new Date().toISOString(),
-      procedureCode: claim.codes?.procedure || 'UNKNOWN',
+      procedureCode,
       description: 'SANDBOX Medical Service',
       billedAmount: amount.toFixed(2),
       allowedAmount: (amount * 0.9).toFixed(2),

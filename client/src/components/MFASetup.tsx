@@ -40,7 +40,10 @@ export default function MFASetup({ onSetupComplete }: { onSetupComplete?: () => 
 
   // Generate QR code and backup codes
   const setupMutation = useMutation({
-    mutationFn: () => apiRequest('/api/auth/mfa/setup', { method: 'POST' }),
+    mutationFn: async (): Promise<MFASetupResponse> => {
+      const response = await apiRequest('/api/auth/mfa/setup', 'POST');
+      return response.json() as Promise<MFASetupResponse>;
+    },
     onSuccess: (data: MFASetupResponse) => {
       setQrCode(data.qrCode);
       setBackupCodes(data.backupCodes);
@@ -57,11 +60,10 @@ export default function MFASetup({ onSetupComplete }: { onSetupComplete?: () => 
 
   // Verify setup code
   const verifyMutation = useMutation({
-    mutationFn: (code: string) =>
-      apiRequest('/api/auth/mfa/verify-setup', {
-        method: 'POST',
-        body: JSON.stringify({ code }),
-      }),
+    mutationFn: async (code: string): Promise<Record<string, unknown>> => {
+      const response = await apiRequest('/api/auth/mfa/verify-setup', 'POST', { code });
+      return response.json() as Promise<Record<string, unknown>>;
+    },
     onSuccess: () => {
       toast({
         title: 'MFA Enabled',

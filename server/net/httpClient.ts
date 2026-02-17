@@ -14,9 +14,7 @@ const httpClient: AxiosInstance = axios.create({
   }
 });
 
-// Add request interceptor to validate against allowlist
-httpClient.interceptors.request.use(
-  (config: AxiosRequestConfig) => {
+const requestInterceptor = (config: any) => {
     // Extract hostname from URL
     let hostname: string;
     
@@ -60,7 +58,7 @@ httpClient.interceptors.request.use(
       // Add sandbox headers if in sandbox mode
       if (process.env.EDI_MODE === 'sandbox') {
         config.headers = {
-          ...config.headers,
+          ...(config.headers || {}),
           'X-Sandbox-Mode': 'true',
           'X-Sandbox-Timestamp': new Date().toISOString()
         };
@@ -71,15 +69,11 @@ httpClient.interceptors.request.use(
       console.error('Error in axios request interceptor:', error);
       return Promise.reject(error);
     }
-  },
-  (error: AxiosError) => {
-    return Promise.reject(error);
-  }
-);
+};
 
-// Add response interceptor to add sandbox metadata
-httpClient.interceptors.response.use(
-  (response) => {
+const requestErrorInterceptor = (error: AxiosError) => Promise.reject(error);
+
+const responseInterceptor = (response: any) => {
     // Add sandbox metadata to responses
     if (process.env.EDI_MODE === 'sandbox') {
       response.data = {
@@ -89,8 +83,9 @@ httpClient.interceptors.response.use(
       };
     }
     return response;
-  },
-  (error: AxiosError) => {
+};
+
+const responseErrorInterceptor = (error: AxiosError) => {
     // Handle sandbox blocked errors specially
     if ((error as any).code === 'SANDBOX_BLOCKED') {
       // Return a mock error response
@@ -108,8 +103,11 @@ httpClient.interceptors.response.use(
       });
     }
     return Promise.reject(error);
-  }
-);
+};
+
+// Add request/response interceptors to validate against allowlist and annotate sandbox responses.
+httpClient.interceptors.request.use(requestInterceptor, requestErrorInterceptor);
+httpClient.interceptors.response.use(responseInterceptor, responseErrorInterceptor);
 
 // Export the controlled client
 export default httpClient;
@@ -119,15 +117,8 @@ export function createProtectedAxiosInstance(config?: AxiosRequestConfig): Axios
   const instance = axios.create(config);
   
   // Apply the same interceptors
-  instance.interceptors.request.use(
-    httpClient.interceptors.request.handlers[0].fulfilled,
-    httpClient.interceptors.request.handlers[0].rejected
-  );
-  
-  instance.interceptors.response.use(
-    httpClient.interceptors.response.handlers[0].fulfilled,
-    httpClient.interceptors.response.handlers[0].rejected
-  );
+  instance.interceptors.request.use(requestInterceptor, requestErrorInterceptor);
+  instance.interceptors.response.use(responseInterceptor, responseErrorInterceptor);
   
   return instance;
 }

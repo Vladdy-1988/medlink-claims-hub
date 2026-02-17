@@ -121,7 +121,7 @@ export class PortalService {
       status: 'portal_upload_required',
       message: `Portal upload required for ${portal.name}`,
       portalUrl: portal.url,
-      instructions: portal.instructions,
+      instructions: [...portal.instructions],
     };
   }
 
@@ -187,7 +187,7 @@ export class PortalService {
       const now = Date.now();
       const daysSinceSubmission = (now - submittedTime) / (1000 * 60 * 60 * 24);
       
-      let newStatus = submission.status;
+      let newStatus: PortalStatusResponse['status'] = submission.status;
       
       // Simulate processing timeline
       if (daysSinceSubmission > 7) {

@@ -52,7 +52,7 @@ function encryptRecord<T extends Record<string, any>>(
 // Generic decryption wrapper
 function decryptRecord<T extends Record<string, any>>(
   tableName: string,
-  record: T | null
+  record: T | null | undefined
 ): T | null {
   if (!record) return null;
   
@@ -83,7 +83,7 @@ function decryptRecords<T extends Record<string, any>>(
   tableName: string,
   records: T[]
 ): T[] {
-  return records.map(r => decryptRecord(tableName, r)!);
+  return records.map((record) => (decryptRecord(tableName, record) ?? record) as T);
 }
 
 /**
@@ -169,12 +169,13 @@ export const claimsRepo = {
     });
     
     // Decrypt nested PHI
-    if (claim) {
-      claim.patient = decryptRecord('patients', claim.patient);
-      claim.provider = decryptRecord('providers', claim.provider);
+    const claimRecord = claim as Record<string, any> | null | undefined;
+    if (claimRecord) {
+      claimRecord.patient = decryptRecord('patients', claimRecord.patient as Record<string, any> | null | undefined);
+      claimRecord.provider = decryptRecord('providers', claimRecord.provider as Record<string, any> | null | undefined);
     }
     
-    return decryptRecord('claims', claim);
+    return decryptRecord('claims', claimRecord);
   },
 
   async findByOrgId(orgId: string, limit = 100) {
@@ -190,10 +191,11 @@ export const claimsRepo = {
     });
     
     // Decrypt all nested PHI
-    return results.map(claim => {
-      claim.patient = decryptRecord('patients', claim.patient);
-      claim.provider = decryptRecord('providers', claim.provider);
-      return decryptRecord('claims', claim);
+    return results.map((claim) => {
+      const claimRecord = claim as Record<string, any>;
+      claimRecord.patient = decryptRecord('patients', claimRecord.patient as Record<string, any> | null | undefined);
+      claimRecord.provider = decryptRecord('providers', claimRecord.provider as Record<string, any> | null | undefined);
+      return decryptRecord('claims', claimRecord);
     });
   },
 
@@ -391,12 +393,19 @@ export const appointmentsRepo = {
       }
     });
     
-    if (appointment) {
-      appointment.patient = decryptRecord('patients', appointment.patient);
-      appointment.provider = decryptRecord('providers', appointment.provider);
+    const appointmentRecord = appointment as Record<string, any> | null | undefined;
+    if (appointmentRecord) {
+      appointmentRecord.patient = decryptRecord(
+        'patients',
+        appointmentRecord.patient as Record<string, any> | null | undefined
+      );
+      appointmentRecord.provider = decryptRecord(
+        'providers',
+        appointmentRecord.provider as Record<string, any> | null | undefined
+      );
     }
     
-    return decryptRecord('appointments', appointment);
+    return decryptRecord('appointments', appointmentRecord);
   },
 
   async findByOrgId(orgId: string) {
@@ -409,10 +418,17 @@ export const appointmentsRepo = {
       orderBy: desc(appointments.scheduledAt)
     });
     
-    return results.map(apt => {
-      apt.patient = decryptRecord('patients', apt.patient);
-      apt.provider = decryptRecord('providers', apt.provider);
-      return decryptRecord('appointments', apt);
+    return results.map((appointment) => {
+      const appointmentRecord = appointment as Record<string, any>;
+      appointmentRecord.patient = decryptRecord(
+        'patients',
+        appointmentRecord.patient as Record<string, any> | null | undefined
+      );
+      appointmentRecord.provider = decryptRecord(
+        'providers',
+        appointmentRecord.provider as Record<string, any> | null | undefined
+      );
+      return decryptRecord('appointments', appointmentRecord);
     });
   }
 };
@@ -439,12 +455,16 @@ export const preauthsRepo = {
       }
     });
     
-    if (preauth) {
-      preauth.patient = decryptRecord('patients', preauth.patient);
-      preauth.provider = decryptRecord('providers', preauth.provider);
+    const preauthRecord = preauth as Record<string, any> | null | undefined;
+    if (preauthRecord) {
+      preauthRecord.patient = decryptRecord('patients', preauthRecord.patient as Record<string, any> | null | undefined);
+      preauthRecord.provider = decryptRecord(
+        'providers',
+        preauthRecord.provider as Record<string, any> | null | undefined
+      );
     }
     
-    return decryptRecord('preAuths', preauth);
+    return decryptRecord('preAuths', preauthRecord);
   },
 
   async findByOrgId(orgId: string) {
@@ -453,11 +473,7 @@ export const preauthsRepo = {
       orderBy: desc(preAuths.createdAt)
     });
     
-    return results.map(preauth => {
-      if (preauth.patient) preauth.patient = decryptRecord('patients', preauth.patient);
-      if (preauth.provider) preauth.provider = decryptRecord('providers', preauth.provider);
-      return decryptRecord('preAuths', preauth);
-    });
+    return decryptRecords('preAuths', results as Array<Record<string, any>>);
   },
 
   async update(id: string, data: Partial<typeof preAuths.$inferInsert>) {
