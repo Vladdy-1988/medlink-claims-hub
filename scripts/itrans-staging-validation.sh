@@ -85,7 +85,6 @@ if [[ "$RUN_LOAD_TESTS" == "true" ]]; then
   if (
     cd "$MEDLINK_DIR"
     k6 run \
-      --scenario load_test \
       --out json="$ARTIFACT_DIR/k6-load.json" \
       --summary-export="$ARTIFACT_DIR/k6-load-summary.json" \
       tests/load/scenarios.js \
@@ -121,7 +120,6 @@ if [[ "$RUN_LOAD_TESTS" == "true" ]]; then
   if (
     cd "$MEDLINK_DIR"
     k6 run \
-      --scenario soak_test \
       --out json="$ARTIFACT_DIR/k6-soak.json" \
       --summary-export="$ARTIFACT_DIR/k6-soak-summary.json" \
       tests/load/scenarios.js \

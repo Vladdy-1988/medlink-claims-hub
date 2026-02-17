@@ -23,8 +23,9 @@ const LOAD_TARGET_VUS = parsePositiveIntEnv(__ENV.K6_LOAD_TARGET_VUS, 100);
 const SOAK_VUS = parsePositiveIntEnv(__ENV.K6_SOAK_VUS, 50);
 const SOAK_DURATION = __ENV.K6_SOAK_DURATION || '30m';
 const ENABLE_SOAK_SCENARIO = __ENV.K6_ENABLE_SOAK === 'true';
+const SELECTED_SCENARIO = (__ENV.K6_SCENARIO || '').trim().toLowerCase();
 
-const scenarios = {
+const allScenarios = {
   // Smoke test: Minimal load to verify system works
   smoke_test: {
     executor: 'constant-vus',
@@ -81,7 +82,7 @@ const scenarios = {
 };
 
 if (ENABLE_SOAK_SCENARIO) {
-  scenarios.soak_test = {
+  allScenarios.soak_test = {
     executor: 'constant-vus',
     vus: SOAK_VUS,
     duration: SOAK_DURATION,
@@ -90,6 +91,35 @@ if (ENABLE_SOAK_SCENARIO) {
     startTime: '0s'
   };
 }
+
+function getScenarioKey(selectedScenario) {
+  if (!selectedScenario) {
+    return null;
+  }
+
+  const normalized = selectedScenario.endsWith('_test')
+    ? selectedScenario
+    : `${selectedScenario}_test`;
+  return normalized;
+}
+
+function buildScenarios(selectedScenario) {
+  const selectedKey = getScenarioKey(selectedScenario);
+  if (!selectedKey) {
+    return allScenarios;
+  }
+
+  if (!allScenarios[selectedKey]) {
+    const available = Object.keys(allScenarios).join(', ');
+    throw new Error(`Unknown K6_SCENARIO="${selectedScenario}". Available scenarios: ${available}`);
+  }
+
+  return {
+    [selectedKey]: allScenarios[selectedKey],
+  };
+}
+
+const scenarios = buildScenarios(SELECTED_SCENARIO);
 
 // Test scenario configurations
 export const options = {
