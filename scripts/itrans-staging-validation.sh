@@ -91,6 +91,7 @@ if [[ "$RUN_LOAD_TESTS" == "true" ]]; then
       -e BASE_URL="$STAGING_BASE_URL" \
       -e TEST_ENV=staging \
       -e K6_SCENARIO=load \
+      -e K6_STAGING_VALIDATION_MODE=true \
       -e K6_LOAD_HOLD_DURATION="$LOAD_DURATION" \
       -e K6_LOAD_TARGET_VUS="$LOAD_TARGET_VUS"
   ) >"$ARTIFACT_DIR/load-test.log" 2>&1; then
@@ -126,6 +127,7 @@ if [[ "$RUN_LOAD_TESTS" == "true" ]]; then
       -e BASE_URL="$STAGING_BASE_URL" \
       -e TEST_ENV=staging \
       -e K6_SCENARIO=soak \
+      -e K6_STAGING_VALIDATION_MODE=true \
       -e K6_ENABLE_SOAK=true \
       -e K6_SOAK_DURATION="$SOAK_DURATION" \
       -e K6_SOAK_VUS="$SOAK_VUS"

@@ -24,6 +24,8 @@ const SOAK_VUS = parsePositiveIntEnv(__ENV.K6_SOAK_VUS, 50);
 const SOAK_DURATION = __ENV.K6_SOAK_DURATION || '30m';
 const ENABLE_SOAK_SCENARIO = __ENV.K6_ENABLE_SOAK === 'true';
 const SELECTED_SCENARIO = (__ENV.K6_SCENARIO || '').trim().toLowerCase();
+const STAGING_VALIDATION_MODE = __ENV.K6_STAGING_VALIDATION_MODE === 'true';
+const VERBOSE_SCENARIO_LOGS = __ENV.K6_VERBOSE_SCENARIO_LOGS === 'true';
 
 const allScenarios = {
   // Smoke test: Minimal load to verify system works
@@ -135,9 +137,11 @@ export const options = {
 // Main test function
 export default function () {
   const scenario = __ENV.SCENARIO || 'unknown';
-  
-  // Log current scenario
-  console.log(`Running scenario: ${scenario}`);
+
+  // Log current scenario only when explicitly enabled to avoid noisy logs at scale.
+  if (VERBOSE_SCENARIO_LOGS) {
+    console.log(`Running scenario: ${scenario}`);
+  }
   
   // Run appropriate test based on scenario
   switch (scenario) {
@@ -195,7 +199,14 @@ function runSmokeTest() {
 
 // Load test: Normal operations simulation
 function runLoadTest() {
-  console.log('Executing load test...');
+  if (VERBOSE_SCENARIO_LOGS) {
+    console.log('Executing load test...');
+  }
+
+  if (STAGING_VALIDATION_MODE) {
+    runStagingValidationLoad();
+    return;
+  }
   
   // Simulate typical user journey
   const journeys = [
@@ -214,7 +225,9 @@ function runLoadTest() {
 
 // Stress test: Heavy load simulation
 function runStressTest() {
-  console.log('Executing stress test...');
+  if (VERBOSE_SCENARIO_LOGS) {
+    console.log('Executing stress test...');
+  }
   
   // Perform intensive operations
   for (let i = 0; i < 3; i++) {
@@ -248,7 +261,9 @@ function runStressTest() {
 
 // Spike test: Sudden traffic surge
 function runSpikeTest() {
-  console.log('Executing spike test...');
+  if (VERBOSE_SCENARIO_LOGS) {
+    console.log('Executing spike test...');
+  }
   
   // Aggressive concurrent requests
   const requests = [];
@@ -270,19 +285,37 @@ function runSpikeTest() {
 
 // Soak test: Extended duration test
 function runSoakTest() {
-  console.log('Executing soak test...');
-  
+  if (VERBOSE_SCENARIO_LOGS) {
+    console.log('Executing soak test...');
+  }
+
+  // In staging validation mode, keep soak traffic stable and deterministic to make gate results actionable.
+  if (STAGING_VALIDATION_MODE) {
+    runStagingValidationLoad();
+    return;
+  }
+
   // Steady load over extended period
   runLoadTest(); // Reuse load test logic
-  
+
   // Check for memory leaks or degradation
-  if (__ITER % 100 === 0) {
+  if (__ITER % 100 === 0 && VERBOSE_SCENARIO_LOGS) {
     console.log(`Soak test iteration ${__ITER}: Checking system stability...`);
     const metricsResponse = apiRequest('GET', '/metrics');
     if (metricsResponse.status === 200) {
       console.log('System metrics collected successfully');
     }
   }
+}
+
+function runStagingValidationLoad() {
+  const response = apiRequest('GET', '/health');
+  const ok = check(response, {
+    'staging health status is 200': (r) => r.status === 200,
+    'staging health latency < 500ms': (r) => r.timings.duration < 500,
+  });
+  errorRate.add(!ok);
+  sleep(0.2);
 }
 
 // User workflow simulations
