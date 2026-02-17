@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import cors from "cors";
-import crypto from "crypto";
+import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -1082,7 +1082,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.getClaimByExternalId(payload.requestIdHash);
 
       if (!claim) {
-        return res.status(503).json({
+        return res.status(404).json({
           ok: false,
           retryable: true,
           message: 'No matching claim found yet; retry later',

@@ -1,6 +1,6 @@
 import { Storage, File } from "@google-cloud/storage";
 import { Response } from "express";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   ObjectAclPolicy,
   ObjectPermission,

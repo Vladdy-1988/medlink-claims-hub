@@ -1,6 +1,6 @@
 import * as speakeasy from 'speakeasy';
 import * as qrcode from 'qrcode';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { logger } from './logger';
 

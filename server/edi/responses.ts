@@ -4,7 +4,7 @@
  */
 
 import type { Claim } from '@shared/schema';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 /**
  * Generate unique sandbox claim number
