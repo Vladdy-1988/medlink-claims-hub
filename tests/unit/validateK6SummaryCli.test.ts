@@ -103,4 +103,32 @@ describe('validate-k6-summary CLI', () => {
       true
     );
   });
+
+  it('supports k6 summary-export boolean threshold format', () => {
+    const summary = {
+      metrics: {
+        http_reqs: { count: 900 },
+        http_req_duration: {
+          'p(95)': 180,
+          'p(99)': 350,
+          thresholds: {
+            'p(95)<400': false,
+          },
+        },
+        http_req_failed: {
+          rate: 0.004,
+          thresholds: { 'rate<0.01': false },
+        },
+        checks: {
+          rate: 0.98,
+          thresholds: { 'rate>0.95': false },
+        },
+      },
+    };
+
+    const { result, gate } = runValidator(summary, ['--gate', 'load', '--min-requests', '100']);
+    expect(result.status).toBe(0);
+    expect(gate?.pass).toBe(true);
+    expect(gate?.failedThresholds).toHaveLength(0);
+  });
 });

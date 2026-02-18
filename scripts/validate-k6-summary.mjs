@@ -31,9 +31,43 @@ function buildDefaults(gate) {
 
 function readMetricValue(metrics, metricName, valueName) {
   const metric = metrics?.[metricName];
-  const values = metric?.values;
-  const value = values?.[valueName];
-  return typeof value === 'number' ? value : null;
+  if (!metric || typeof metric !== 'object') {
+    return null;
+  }
+
+  const values = metric.values;
+  if (values && typeof values[valueName] === 'number') {
+    return values[valueName];
+  }
+
+  if (typeof metric[valueName] === 'number') {
+    return metric[valueName];
+  }
+
+  // k6 summary-export may represent rate metrics as { value }.
+  if (valueName === 'rate' && typeof metric.value === 'number') {
+    return metric.value;
+  }
+
+  return null;
+}
+
+function isThresholdFailure(result) {
+  // k6 summary exports have used both boolean and { ok: boolean } formats.
+  if (typeof result === 'boolean') {
+    return result;
+  }
+
+  if (result && typeof result === 'object') {
+    if (typeof result.ok === 'boolean') {
+      return !result.ok;
+    }
+    if (typeof result.pass === 'boolean') {
+      return !result.pass;
+    }
+  }
+
+  return false;
 }
 
 export function evaluateK6Summary(summary, options = {}) {
@@ -61,7 +95,7 @@ export function evaluateK6Summary(summary, options = {}) {
   for (const [metricName, metric] of Object.entries(metrics)) {
     const thresholdMap = metric?.thresholds ?? {};
     for (const [expr, result] of Object.entries(thresholdMap)) {
-      if (!result?.ok) {
+      if (isThresholdFailure(result)) {
         failedThresholds.push(`${metricName}:${expr}`);
       }
     }

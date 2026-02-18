@@ -127,8 +127,9 @@ const scenarios = buildScenarios(SELECTED_SCENARIO);
 export const options = {
   scenarios,
   
-  // Apply thresholds from thresholds.js
-  thresholds: applyThresholds(),
+  // Staging validation mode delegates pass/fail to scripts/validate-k6-summary.mjs.
+  // Disable k6-native thresholds here so summary export always completes.
+  thresholds: STAGING_VALIDATION_MODE ? {} : applyThresholds(),
   
   // Configure summary output
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
