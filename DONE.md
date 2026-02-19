@@ -1,6 +1,6 @@
 # iTrans + MedLink Scope Lock and Launch Gates
 
-Last updated: 2026-02-17
+Last updated: 2026-02-19
 Owner: MedLink + iTrans integration team
 
 ## Scope lock
@@ -35,7 +35,7 @@ Status legend:
 |---|---|---|---|
 | G0 | Scope lock approved (this file) | PASS | `DONE.md` |
 | G1 | Internal code/test baseline green (MedLink + iTrans) | PASS | command logs + CI artifacts |
-| G2 | Cross-repo E2E CI green with strict summary gate | PENDING | workflow run URL + `.local/itrans-cross-repo-e2e/result.json` |
+| G2 | Cross-repo E2E CI green with strict summary gate | PASS | [PR run](https://github.com/Vladdy-1988/medlink-claims-hub/actions/runs/22102683623) + [scheduled run](https://github.com/Vladdy-1988/medlink-claims-hub/actions/runs/22170767318) |
 | G3 | Staging validation green (functional + failure-injection + load + soak + explicit SLO gate files) | PENDING | workflow run URL + `.local/itrans-staging-validation/summary.json` + `k6-load-gate.json` + `k6-soak-gate.json` |
 | G4 | Backup/restore drill green with checksum + manifest verification | PENDING | drill report + restore output |
 | G5 | Secrets/security launch checklist signed off | PENDING | runbook checklist + rotation evidence |
@@ -47,10 +47,12 @@ Status legend:
 Record exact links and artifact paths here before launch approval:
 
 1. G2 Cross-repo E2E:
-- Workflow run:
-- Commit SHA:
-- Artifact:
-- Summary file (`status=pass`, `claimId`, `requestId`, `deliveredCount>=1`):
+- Workflow run (PR): https://github.com/Vladdy-1988/medlink-claims-hub/actions/runs/22102683623
+- Workflow run (scheduled, latest): https://github.com/Vladdy-1988/medlink-claims-hub/actions/runs/22170767318
+- Commit SHA (PR): `68e2cc5` (demo-fix branch)
+- Commit SHA (main merge): per merge commit on main
+- Artifact: `itrans-e2e-logs` uploaded by workflow
+- Summary file (`status=pass`, `claimId`, `requestId`, `deliveredCount>=1`): verified via CI summary gate step
 
 2. G3 Staging validation:
 - Workflow run:
