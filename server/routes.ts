@@ -831,7 +831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Request logging (PHI-safe)
   app.use(requestLogger);
   
-  // Metrics endpoint (after CORS)
+  // Metrics endpoint
   app.get('/metrics', metricsEndpoint);
   
   // Configure CORS for SSO (only for SSO endpoint)
