@@ -16,7 +16,6 @@ import { handleSSOLogin, configureCORS } from "./ssoAuth";
 import { csrfProtection, getCSRFToken, issueCSRFToken } from "./security/csrf";
 import { authLimiter, uploadLimiter, connectorLimiter, apiLimiter } from "./security/rateLimiter";
 import { configureSecurityHeaders, additionalSecurityHeaders } from "./security/headers";
-import { getCORSMiddleware } from "./security/cors";
 import { logger, requestLogger } from "./security/logger";
 import { healthCheck, readinessCheck, metricsEndpoint } from "./security/healthChecks";
 import { ItransWebhookIdempotencyStore } from "./integrations/itransWebhookIdempotency";
@@ -826,8 +825,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply security headers
   app.use(configureSecurityHeaders());
   
-  // Apply CORS middleware
-  app.use(getCORSMiddleware());
+  // Do not apply CORS globally. This app serves frontend + API on the same origin.
+  // Global CORS can break static asset delivery when browsers attach Origin headers.
   
   // Request logging (PHI-safe)
   app.use(requestLogger);
